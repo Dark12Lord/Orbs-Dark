@@ -1,6 +1,6 @@
 {
   "name": "dark-orbs",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "أداة إدارة مهام ديسكورد",
   "main": "index.js",
   "scripts": {

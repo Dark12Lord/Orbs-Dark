@@ -5,7 +5,6 @@ const config = require("./config");
 
 let supabase = null;
 
-// ✅ تهيئة Supabase إن توفرت متغيرات البيئة
 function initSupabase() {
     if (supabase !== null) return supabase;
     
@@ -13,7 +12,7 @@ function initSupabase() {
     const key = process.env.SUPABASE_KEY;
     
     if (!url || !key) {
-        console.log('[db] ⚠️ Supabase غير مهيأ، سيتم استخدام JSON محلي');
+        console.log('[db] ⚠️ Supabase غير مهيأ: SUPABASE_URL أو SUPABASE_KEY مفقود');
         supabase = false;
         return false;
     }
@@ -21,7 +20,7 @@ function initSupabase() {
     try {
         const { createClient } = require('@supabase/supabase-js');
         supabase = createClient(url, key);
-        console.log('[db] ✅ Supabase متصل');
+        console.log('[db] ✅ Supabase متصل بنجاح');
         return supabase;
     } catch (err) {
         console.error('[db] ❌ فشل تهيئة Supabase:', err.message);
@@ -30,7 +29,6 @@ function initSupabase() {
     }
 }
 
-// ===== التشفير =====
 const ALGORITHM = "aes-256-cbc";
 
 function getKey() {
@@ -55,7 +53,6 @@ function decrypt(encryptedText) {
     return decrypted;
 }
 
-// ===== JSON Fallback =====
 function loadJSON() {
     if (!fs.existsSync(config.dataFile)) return { accounts: [] };
     try {
@@ -70,7 +67,6 @@ function saveJSON(data) {
     fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8");
 }
 
-// ===== جلب اسم المستخدم =====
 async function fetchUsername(token) {
     try {
         const res = await axios.get("https://discord.com/api/v9/users/@me", {
@@ -87,7 +83,6 @@ async function fetchUsername(token) {
     }
 }
 
-// ===== إضافة حساب =====
 async function addAccount(token, name) {
     const id = crypto.randomBytes(4).toString("hex");
     
@@ -109,10 +104,15 @@ async function addAccount(token, name) {
 
     const sb = initSupabase();
     if (sb) {
+        console.log('[db] 🔍 جرب الحفظ في Supabase...');
         const { error } = await sb.from('accounts').insert(account);
-        if (error) throw new Error('Supabase insert failed: ' + error.message);
+        if (error) {
+            console.error('[db] ❌ فشل الحفظ:', error.message);
+            throw new Error('Supabase insert failed: ' + error.message);
+        }
         console.log(`[db] ✅ حساب ${finalName} محفوظ في Supabase`);
     } else {
+        console.log('[db] ⚠️ استخدام الحفظ المحلي (JSON)');
         const data = loadJSON();
         data.accounts.push(account);
         saveJSON(data);
@@ -121,7 +121,6 @@ async function addAccount(token, name) {
     return { id, name: finalName };
 }
 
-// ===== حذف حساب =====
 async function removeAccount(id) {
     const sb = initSupabase();
     if (sb) {
@@ -133,7 +132,6 @@ async function removeAccount(id) {
     }
 }
 
-// ===== جلب حساب واحد =====
 async function getAccount(id) {
     const sb = initSupabase();
     let account;
@@ -154,7 +152,6 @@ async function getAccount(id) {
     };
 }
 
-// ===== جلب كل الحسابات =====
 async function getAllAccounts() {
     const sb = initSupabase();
     let accounts;
@@ -179,9 +176,7 @@ async function getAllAccounts() {
     }));
 }
 
-// ===== تحديث حساب =====
 async function updateAccount(id, updates) {
-    // تحويل من camelCase إلى snake_case
     const dbUpdates = { ...updates };
     if (updates.lastRun !== undefined) {
         dbUpdates.last_run = updates.lastRun;
@@ -202,7 +197,6 @@ async function updateAccount(id, updates) {
     }
 }
 
-// ===== تحديث المهام =====
 async function updateQuests(id, quests) {
     return updateAccount(id, {
         quests: quests,

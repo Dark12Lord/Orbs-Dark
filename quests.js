@@ -73,41 +73,36 @@ async function solveSequentially(token, onUpdate) {
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                if (questType === 'WATCH_VIDEO') {
+                await client.quests.acceptQuest(questId);
+                console.log(`   ✅ تم قبول المهمة`);
+
+                if (questType === 'WATCH_VIDEO' || questType === 'WATCH_VIDEO_ON_MOBILE') {
                     const durationMs = getVideoDuration(quest);
                     const speedMultiplier = 2.0;
                     const intervalMs = 30000;
                     const totalSteps = Math.ceil(durationMs / (intervalMs * speedMultiplier));
-
-                    console.log(`   ⏳ مدة: ${Math.round(durationMs / 60000)} دقيقة | خطوات: ${totalSteps}`);
-
+                    
                     for (let step = 1; step <= totalSteps; step++) {
                         const timestamp = Math.min(step * intervalMs * speedMultiplier, durationMs);
                         await client.quests.videoProgress(questId, timestamp);
-
                         const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
-
                         await sleep(intervalMs / speedMultiplier + Math.random() * 2000);
                     }
                 } else if (questType === 'PLAY_ON_DESKTOP' || questType === 'PLAY_ACTIVITY') {
                     const appId = getApplicationId(quest);
                     if (!appId) throw new Error('application_id غير موجود');
-
+                    
                     const durationMs = 900000;
                     const intervalMs = 60000;
                     const totalSteps = Math.ceil(durationMs / intervalMs);
-
-                    console.log(`   🎮 App: ${appId} | خطوات: ${totalSteps}`);
-
+                    
                     for (let step = 1; step <= totalSteps; step++) {
                         await client.quests.heartbeat(questId, appId);
-
                         const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
-
                         await sleep(intervalMs + Math.random() * 5000);
                     }
                 } else {
@@ -151,5 +146,4 @@ async function solveSequentially(token, onUpdate) {
     }
 }
 
-// ✅ التصدير الصحيح
 module.exports = { solveSequentially };
