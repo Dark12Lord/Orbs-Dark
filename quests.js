@@ -1,12 +1,11 @@
-// quests.js - محرك المهام مع تقدم مرئي (djs-selfbot-v13)
+// quests.js - محرك المهام باستخدام djs-selfbot-v13
 const { Client } = require('djs-selfbot-v13');
 
 // ===== دالة رسم شريط التقدم =====
 function renderProgressBar(percent, width = 20) {
     const filled = Math.round((percent / 100) * width);
     const empty = width - filled;
-    const bar = '█'.repeat(filled) + '░'.repeat(empty);
-    return `[${bar}] ${percent}%`;
+    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percent}%`;
 }
 
 // ===== دالة تأخير =====
@@ -27,10 +26,11 @@ async function solveSequentially(token, onUpdate) {
     const client = new Client();
 
     try {
+        // ✅ تسجيل الدخول (djs-selfbot-v13 يحدّث build number و User-Agent تلقائياً)
         await client.login(token);
         console.log(`✅ تم تسجيل الدخول كـ ${client.user.username}\n`);
 
-        // جلب المهام باستخدام QuestManager
+        // ✅ جلب المهام الصالحة (غير منتهية وغير مكتملة)
         await client.quests.get();
         const validQuests = client.quests.filterQuestsValid();
 
@@ -48,28 +48,31 @@ async function solveSequentially(token, onUpdate) {
         });
         console.log('');
 
-        // حل المهام
+        // ✅ حل المهام واحدة تلو الأخرى
         for (let i = 0; i < validQuests.length; i++) {
             const quest = validQuests[i];
             const questId = quest.id;
             const questName = getQuestName(quest);
 
             console.log(`\n[${i + 1}/${validQuests.length}] ═══════════════════`);
+            console.log(`   📌 ${questName}`);
 
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                // دالة doingQuest تتولى كل شيء تلقائياً
-                await client.quests.doingQuest(quest, (percent) => {
-                    process.stdout.write(`\r   ${renderProgressBar(percent)}`);
-                    if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
-                });
+                // ✅ doingQuest تتولى التسجيل + الحل + الانتظار تلقائياً
+                console.log(`   ⏳ جاري الحل...`);
+                await client.quests.doingQuest(quest);
+
+                // بعد اكتمال المهمة، نعرض التقدم النهائي
+                process.stdout.write(`\r   ${renderProgressBar(100)}`);
 
                 results.push({ id: questId, name: questName, status: 'COMPLETED' });
                 console.log(`\n   ✅ اكتملت: ${questName}`);
+
                 if (onUpdate) onUpdate({ questId, questName, status: 'completed', percent: 100 });
 
-                // تأخير بين المهام
+                // تأخير بين المهام (5-15 ثانية عشوائية)
                 if (i < validQuests.length - 1) {
                     const delay = 5000 + Math.random() * 10000;
                     console.log(`   ⏳ انتظار ${Math.round(delay / 1000)} ثانية قبل التالية...`);
@@ -83,6 +86,7 @@ async function solveSequentially(token, onUpdate) {
             }
         }
 
+        // ملخص نهائي
         const succeeded = results.filter(r => r.status === 'COMPLETED').length;
         const failed = results.filter(r => r.status === 'REJECTED').length;
 

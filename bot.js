@@ -28,17 +28,15 @@ class QuestBot {
             if (result.success) {
                 // تحديث المهام في قاعدة البيانات
                 database.updateQuests(this.accountId, result.quests);
-                
-                // ✅ التوقف التلقائي إذا خلصت كل المهام
+
+                // تحديد الحالة النهائية
                 const hasPending = result.quests.some(
                     q => q.status !== 'COMPLETED' && q.status !== 'REJECTED'
                 );
 
                 this.running = false;
                 this.status = hasPending ? 'IDLE' : 'DONE';
-                database.updateAccount(this.accountId, { 
-                    status: this.status 
-                });
+                database.updateAccount(this.accountId, { status: this.status });
 
                 return {
                     success: true,
@@ -67,10 +65,7 @@ class QuestBot {
     }
 
     getStatus() {
-        return {
-            running: this.running,
-            status: this.status,
-        };
+        return { running: this.running, status: this.status };
     }
 }
 

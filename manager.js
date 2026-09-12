@@ -1,10 +1,8 @@
 const QuestBot = require('./bot');
 const database = require('./database');
 
-// تخزين البوتات النشطة
 const activeBots = new Map();
 
-// تشغيل حساب
 async function startAccount(accountId, onUpdate) {
     if (activeBots.has(accountId)) {
         return { success: false, error: 'الحساب شغال مسبقاً' };
@@ -14,15 +12,15 @@ async function startAccount(accountId, onUpdate) {
     activeBots.set(accountId, bot);
 
     try {
+        console.log(`[manager] ▶️ بدء تشغيل الحساب ${accountId}`);
         const result = await bot.start(onUpdate);
+        console.log(`[manager] ${result.success ? '✅' : '❌'} انتهى: ${result.message || result.error}`);
         return result;
     } finally {
-        // إزالة البوت من القائمة بعد الانتهاء
         activeBots.delete(accountId);
     }
 }
 
-// إيقاف حساب
 function stopAccount(accountId) {
     const bot = activeBots.get(accountId);
     if (!bot) {
@@ -31,7 +29,6 @@ function stopAccount(accountId) {
     return bot.stop();
 }
 
-// حالة حساب
 function getAccountStatus(accountId) {
     const bot = activeBots.get(accountId);
     if (bot) {
@@ -44,7 +41,6 @@ function getAccountStatus(accountId) {
     };
 }
 
-// الحصول على كل الحسابات النشطة
 function getActiveBots() {
     return Array.from(activeBots.keys());
 }
