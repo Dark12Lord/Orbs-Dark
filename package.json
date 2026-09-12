@@ -1,19 +1,19 @@
 {
   "name": "dark-orbs",
-  "version": "2.0.0",
-  "description": "أداة إدارة مهام ديسكورد",
+  "version": "3.0.0",
+  "description": "أداة إدارة مهام ديسكورد مع تقدم مرئي",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "discord-selfbot-ameliored": "^3.7.8",
+    "discord.js-selfbot-v13": "3.7.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
   },
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=24.0.0"
   }
 }
