@@ -1,4 +1,4 @@
-// quests.js - محرك المهام باستخدام djs-selfbot-v13 (مع debug)
+// quests.js - محرك المهام باستخدام djs-selfbot-v13
 const { Client } = require('djs-selfbot-v13');
 
 function renderProgressBar(percent, width = 20) {
@@ -10,56 +10,64 @@ function renderProgressBar(percent, width = 20) {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function getQuestName(quest) {
-    return quest.config?.messages?.questName || quest.config?.messages?.quest_name || quest.id;
+    return quest.config?.messages?.quest_name || quest.config?.messages?.questName || quest.id;
 }
 
-// ⭐ دالة محدثة مع debug
-function getQuestType(quest) {
-    // سجل البنية كاملة للمهمة الأولى فقط
-    if (!global._loggedFirstQuest) {
-        global._loggedFirstQuest = true;
-        console.log('\n🔍 ═══ بنية المهمة الأولى (كاملة) ═══');
-        console.log(JSON.stringify(quest, null, 2).slice(0, 5000));
-        console.log('\n🔑 مفاتيح المهمة:', Object.keys(quest).join(', '));
-        console.log('🔑 مفاتيح config:', Object.keys(quest.config || {}).join(', '));
-        
-        if (quest.config?.taskConfigV2) {
-            console.log('🔑 taskConfigV2 keys:', Object.keys(quest.config.taskConfigV2).join(', '));
-            if (quest.config.taskConfigV2.tasks) {
-                console.log('🔑 tasks keys:', Object.keys(quest.config.taskConfigV2.tasks).join(', '));
-            }
-        }
-        if (quest.config?.taskConfig) {
-            console.log('🔑 taskConfig keys:', Object.keys(quest.config.taskConfig).join(', '));
-        }
-        if (quest.config?.task_config) {
-            console.log('🔑 task_config keys:', Object.keys(quest.config.task_config).join(', '));
-        }
-        console.log('═══ نهاية البنية ═══\n');
-    }
+// ✅ استخراج task_config_v2 من أي مكان محتمل
+function getTaskConfig(quest) {
+    const cfg = quest.config || quest._raw?.config;
+    return cfg?.task_config_v2 || cfg?.taskConfigV2 || cfg?.task_config || cfg?.taskConfig || null;
+}
 
-    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
-    if (!taskConfig?.tasks) return 'UNKNOWN';
+// ✅ استخراج نوع المهمة بشكل صحيح
+function getQuestType(quest) {
+    const taskConfig = getTaskConfig(quest);
+    if (!taskConfig || !taskConfig.tasks) return 'UNKNOWN';
     
-    if (taskConfig.tasks.WATCH_VIDEO || taskConfig.tasks.WATCH_VIDEO_ON_MOBILE) return 'WATCH_VIDEO';
-    if (taskConfig.tasks.PLAY_ON_DESKTOP) return 'PLAY_ON_DESKTOP';
-    if (taskConfig.tasks.PLAY_ACTIVITY) return 'PLAY_ACTIVITY';
-    if (taskConfig.tasks.STREAM_ON_DESKTOP) return 'STREAM_ON_DESKTOP';
-    if (taskConfig.tasks.ACHIEVEMENT_IN_ACTIVITY) return 'ACHIEVEMENT_IN_ACTIVITY';
+    const tasks = taskConfig.tasks;
+    if (tasks.WATCH_VIDEO || tasks.WATCH_VIDEO_ON_MOBILE) return 'WATCH_VIDEO';
+    if (tasks.PLAY_ON_DESKTOP) return 'PLAY_ON_DESKTOP';
+    if (tasks.PLAY_ACTIVITY) return 'PLAY_ACTIVITY';
+    if (tasks.STREAM_ON_DESKTOP) return 'STREAM_ON_DESKTOP';
+    if (tasks.ACHIEVEMENT_IN_ACTIVITY) return 'ACHIEVEMENT_IN_ACTIVITY';
     
     return 'UNKNOWN';
 }
 
-function getVideoDuration(quest) {
-    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
-    return taskConfig?.tasks?.WATCH_VIDEO?.videoDurationMs || 
-           taskConfig?.tasks?.WATCH_VIDEO_ON_MOBILE?.videoDurationMs || 
-           900000;
+// ✅ استخراج application_id من task_config_v2
+function getApplicationId(quest) {
+    const taskConfig = getTaskConfig(quest);
+    if (!taskConfig || !taskConfig.tasks) return null;
+    
+    const tasks = taskConfig.tasks;
+    // PLAY_ON_DESKTOP
+    if (tasks.PLAY_ON_DESKTOP?.applications?.[0]?.id) {
+        return tasks.PLAY_ON_DESKTOP.applications[0].id;
+    }
+    // PLAY_ACTIVITY
+    if (tasks.PLAY_ACTIVITY?.applications?.[0]?.id) {
+        return tasks.PLAY_ACTIVITY.applications[0].id;
+    }
+    // STREAM_ON_DESKTOP
+    if (tasks.STREAM_ON_DESKTOP?.applications?.[0]?.id) {
+        return tasks.STREAM_ON_DESKTOP.applications[0].id;
+    }
+    
+    // fallback: من config.application
+    return quest.config?.application?.id || null;
 }
 
-function getApplicationId(quest) {
-    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
-    return taskConfig?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id || null;
+// ✅ استخراج مدة الفيديو
+function getVideoDuration(quest) {
+    const taskConfig = getTaskConfig(quest);
+    if (!taskConfig || !taskConfig.tasks) return 900000;
+    
+    const tasks = taskConfig.tasks;
+    return tasks.WATCH_VIDEO?.video_duration_ms || 
+           tasks.WATCH_VIDEO?.videoDurationMs ||
+           tasks.WATCH_VIDEO_ON_MOBILE?.video_duration_ms ||
+           tasks.WATCH_VIDEO_ON_MOBILE?.videoDurationMs ||
+           900000;
 }
 
 async function solveSequentially(token, onUpdate) {
@@ -101,8 +109,13 @@ async function solveSequentially(token, onUpdate) {
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                await client.quests.acceptQuest(questId);
-                console.log(`   ✅ تم قبول المهمة`);
+                // محاولة accept (قد لا تحتاجها بعض المهام)
+                try {
+                    await client.quests.acceptQuest(questId);
+                    console.log(`   ✅ تم قبول المهمة`);
+                } catch (e) {
+                    console.log(`   ⚠️ القبول: ${e.message}`);
+                }
 
                 if (questType === 'WATCH_VIDEO' || questType === 'WATCH_VIDEO_ON_MOBILE') {
                     const durationMs = getVideoDuration(quest);
