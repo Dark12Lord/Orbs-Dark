@@ -1,5 +1,5 @@
 // quests.js - محرك المهام باستخدام discord.js-selfbot-v13
-const { Client } = require('discord.js-selfbot-v13');
+const { Client } = require('discord-selfbot-ameliored');
 
 async function solveSequentially(token, onUpdate) {
     const results = [];

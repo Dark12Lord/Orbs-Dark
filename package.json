@@ -1,14 +1,14 @@
 {
   "name": "dark-orbs",
   "version": "2.0.0",
-  "description": "أداة إدارة مهام ديسكورد باستخدام discord.js-selfbot-v13",
+  "description": "أداة إدارة مهام ديسكورد",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "discord.js-selfbot-v13": "3.7.1",
+    "discord-selfbot-ameliored": "^3.7.8",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
