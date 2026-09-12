@@ -7,6 +7,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "axios": "^1.7.7",
     "djs-selfbot-v13": "^10.9.20",
     "dotenv": "^16.4.5",

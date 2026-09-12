@@ -14,21 +14,18 @@ class QuestBot {
             return { success: false, error: 'البوت شغال مسبقاً' };
         }
 
-        const account = database.getAccount(this.accountId);
+        const account = await database.getAccount(this.accountId);
         if (!account) {
             return { success: false, error: 'الحساب غير موجود' };
         }
 
         this.running = true;
         this.status = 'RUNNING';
-        database.updateAccount(this.accountId, { status: 'RUNNING' });
-
-        // ✅ مخزن مؤقت للمهام المحدثة
+        await database.updateAccount(this.accountId, { status: 'RUNNING' });
         this.currentQuests = [];
 
         try {
-            const result = await solveSequentially(account.token, (update) => {
-                // ✅ 1. تحديث المخزن المؤقت
+            const result = await solveSequentially(account.token, async (update) => {
                 const existing = this.currentQuests.find(q => q.id === update.questId);
                 if (existing) {
                     existing.status = update.status;
@@ -44,16 +41,12 @@ class QuestBot {
                     });
                 }
 
-                // ✅ 2. حفظ في قاعدة البيانات فوراً (عشان لوحة التحكم تشوفه)
-                database.updateQuests(this.accountId, this.currentQuests);
-
-                // ✅ 3. استدعاء callback الأصلي
+                await database.updateQuests(this.accountId, this.currentQuests);
                 if (onUpdate) onUpdate(update);
             });
 
             if (result.success) {
-                // تحديث المهام النهائية
-                database.updateQuests(this.accountId, result.quests);
+                await database.updateQuests(this.accountId, result.quests);
 
                 const hasPending = result.quests.some(
                     q => q.status !== 'COMPLETED' && q.status !== 'REJECTED'
@@ -61,23 +54,19 @@ class QuestBot {
 
                 this.running = false;
                 this.status = hasPending ? 'IDLE' : 'DONE';
-                database.updateAccount(this.accountId, { status: this.status });
+                await database.updateAccount(this.accountId, { status: this.status });
 
-                return {
-                    success: true,
-                    quests: result.quests,
-                    message: hasPending ? 'تمت المعالجة' : 'خلصت كل المهام',
-                };
+                return { success: true, quests: result.quests, message: hasPending ? 'تمت المعالجة' : 'خلصت كل المهام' };
             } else {
                 this.running = false;
                 this.status = 'ERROR';
-                database.updateAccount(this.accountId, { status: 'ERROR' });
+                await database.updateAccount(this.accountId, { status: 'ERROR' });
                 return { success: false, error: result.error };
             }
         } catch (err) {
             this.running = false;
             this.status = 'ERROR';
-            database.updateAccount(this.accountId, { status: 'ERROR' });
+            await database.updateAccount(this.accountId, { status: 'ERROR' });
             return { success: false, error: err.message };
         }
     }

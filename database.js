@@ -3,150 +3,218 @@ const crypto = require("crypto");
 const axios = require("axios");
 const config = require("./config");
 
+let supabase = null;
+
+// ✅ تهيئة Supabase إن توفرت متغيرات البيئة
+function initSupabase() {
+    if (supabase !== null) return supabase;
+    
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_KEY;
+    
+    if (!url || !key) {
+        console.log('[db] ⚠️ Supabase غير مهيأ، سيتم استخدام JSON محلي');
+        supabase = false;
+        return false;
+    }
+    
+    try {
+        const { createClient } = require('@supabase/supabase-js');
+        supabase = createClient(url, key);
+        console.log('[db] ✅ Supabase متصل');
+        return supabase;
+    } catch (err) {
+        console.error('[db] ❌ فشل تهيئة Supabase:', err.message);
+        supabase = false;
+        return false;
+    }
+}
+
+// ===== التشفير =====
 const ALGORITHM = "aes-256-cbc";
 
-// اشتقاق مفتاح 32 بايت من المفتاح النصي
 function getKey() {
-  return crypto.createHash("sha256").update(config.encryptionKey).digest();
+    return crypto.createHash("sha256").update(config.encryptionKey).digest();
 }
 
-// تشفير التوكن
 function encrypt(text) {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
-  let encrypted = cipher.update(text, "utf8", "hex");
-  encrypted += cipher.final("hex");
-  return iv.toString("hex") + ":" + encrypted;
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
+    let encrypted = cipher.update(text, "utf8", "hex");
+    encrypted += cipher.final("hex");
+    return iv.toString("hex") + ":" + encrypted;
 }
 
-// فك تشفير التوكن
 function decrypt(encryptedText) {
-  const parts = encryptedText.split(":");
-  const iv = Buffer.from(parts[0], "hex");
-  const encrypted = parts[1];
-  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
-  let decrypted = decipher.update(encrypted, "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+    const parts = encryptedText.split(":");
+    const iv = Buffer.from(parts[0], "hex");
+    const encrypted = parts[1];
+    const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
 }
 
-// قراءة البيانات
-function load() {
-  if (!fs.existsSync(config.dataFile)) {
-    return { accounts: [] };
-  }
-  try {
-    const raw = fs.readFileSync(config.dataFile, "utf8");
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error("Error reading data:", err.message);
-    return { accounts: [] };
-  }
+// ===== JSON Fallback =====
+function loadJSON() {
+    if (!fs.existsSync(config.dataFile)) return { accounts: [] };
+    try {
+        return JSON.parse(fs.readFileSync(config.dataFile, "utf8"));
+    } catch (err) {
+        console.error("Error reading JSON:", err.message);
+        return { accounts: [] };
+    }
 }
 
-// حفظ البيانات
-function save(data) {
-  fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8");
+function saveJSON(data) {
+    fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8");
 }
 
-// جلب اسم المستخدم من التوكن
+// ===== جلب اسم المستخدم =====
 async function fetchUsername(token) {
-  try {
-    const res = await axios.get("https://discord.com/api/v9/users/@me", {
-      headers: {
-        Authorization: token,
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      timeout: 10000,
-    });
-    return res.data.username || res.data.global_name || null;
-  } catch (err) {
-    console.error("Failed to fetch username:", err.message);
-    return null;
-  }
+    try {
+        const res = await axios.get("https://discord.com/api/v9/users/@me", {
+            headers: {
+                Authorization: token,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+            timeout: 10000,
+        });
+        return res.data.username || res.data.global_name || null;
+    } catch (err) {
+        console.error("Failed to fetch username:", err.message);
+        return null;
+    }
 }
 
-// إضافة حساب (async - تجيب اسم اليوزر تلقائياً)
+// ===== إضافة حساب =====
 async function addAccount(token, name) {
-  const data = load();
-  const id = crypto.randomBytes(4).toString("hex");
+    const id = crypto.randomBytes(4).toString("hex");
+    
+    let finalName = name;
+    if (!finalName || finalName.trim() === "") {
+        const fetched = await fetchUsername(token);
+        finalName = fetched || "حساب_" + id;
+    }
 
-  // لو ما في اسم، اجيبه من ديسكورد
-  let finalName = name;
-  if (!finalName || finalName.trim() === "") {
-    const fetched = await fetchUsername(token);
-    finalName = fetched || "حساب_" + (data.accounts.length + 1);
-  }
+    const account = {
+        id: id,
+        name: finalName,
+        token: encrypt(token),
+        status: "IDLE",
+        last_run: null,
+        quests: [],
+        created_at: new Date().toISOString(),
+    };
 
-  const account = {
-    id: id,
-    name: finalName,
-    token: encrypt(token),
-    status: "IDLE",
-    lastRun: null,
-    quests: [],
-    createdAt: new Date().toISOString(),
-  };
-
-  data.accounts.push(account);
-  save(data);
-  return { id: id, name: account.name };
+    const sb = initSupabase();
+    if (sb) {
+        const { error } = await sb.from('accounts').insert(account);
+        if (error) throw new Error('Supabase insert failed: ' + error.message);
+        console.log(`[db] ✅ حساب ${finalName} محفوظ في Supabase`);
+    } else {
+        const data = loadJSON();
+        data.accounts.push(account);
+        saveJSON(data);
+    }
+    
+    return { id, name: finalName };
 }
 
-// حذف حساب
-function removeAccount(id) {
-  const data = load();
-  data.accounts = data.accounts.filter((a) => a.id !== id);
-  save(data);
+// ===== حذف حساب =====
+async function removeAccount(id) {
+    const sb = initSupabase();
+    if (sb) {
+        await sb.from('accounts').delete().eq('id', id);
+    } else {
+        const data = loadJSON();
+        data.accounts = data.accounts.filter(a => a.id !== id);
+        saveJSON(data);
+    }
 }
 
-// الحصول على حساب (مع فك التشفير)
-function getAccount(id) {
-  const data = load();
-  const account = data.accounts.find((a) => a.id === id);
-  if (!account) return null;
-  return {
-    ...account,
-    token: decrypt(account.token),
-  };
+// ===== جلب حساب واحد =====
+async function getAccount(id) {
+    const sb = initSupabase();
+    let account;
+    
+    if (sb) {
+        const { data, error } = await sb.from('accounts').select('*').eq('id', id).single();
+        if (error || !data) return null;
+        account = data;
+    } else {
+        const data = loadJSON();
+        account = data.accounts.find(a => a.id === id);
+        if (!account) return null;
+    }
+    
+    return {
+        ...account,
+        token: decrypt(account.token),
+    };
 }
 
-// الحصول على كل الحسابات (بدون توكن)
-function getAllAccounts() {
-  const data = load();
-  return data.accounts.map((a) => ({
-    id: a.id,
-    name: a.name,
-    status: a.status,
-    lastRun: a.lastRun,
-    quests: a.quests,
-  }));
+// ===== جلب كل الحسابات =====
+async function getAllAccounts() {
+    const sb = initSupabase();
+    let accounts;
+    
+    if (sb) {
+        const { data, error } = await sb.from('accounts').select('*').order('created_at', { ascending: true });
+        if (error) {
+            console.error('[db] Supabase select failed:', error.message);
+            return [];
+        }
+        accounts = data || [];
+    } else {
+        accounts = loadJSON().accounts;
+    }
+    
+    return accounts.map(a => ({
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        lastRun: a.last_run,
+        quests: a.quests || [],
+    }));
 }
 
-// تحديث حالة حساب
-function updateAccount(id, updates) {
-  const data = load();
-  const index = data.accounts.findIndex((a) => a.id === id);
-  if (index === -1) return false;
-  data.accounts[index] = { ...data.accounts[index], ...updates };
-  save(data);
-  return true;
+// ===== تحديث حساب =====
+async function updateAccount(id, updates) {
+    // تحويل من camelCase إلى snake_case
+    const dbUpdates = { ...updates };
+    if (updates.lastRun !== undefined) {
+        dbUpdates.last_run = updates.lastRun;
+        delete dbUpdates.lastRun;
+    }
+    
+    const sb = initSupabase();
+    if (sb) {
+        const { error } = await sb.from('accounts').update(dbUpdates).eq('id', id);
+        return !error;
+    } else {
+        const data = loadJSON();
+        const index = data.accounts.findIndex(a => a.id === id);
+        if (index === -1) return false;
+        data.accounts[index] = { ...data.accounts[index], ...dbUpdates };
+        saveJSON(data);
+        return true;
+    }
 }
 
-// تحديث المهام
-function updateQuests(id, quests) {
-  return updateAccount(id, {
-    quests: quests,
-    lastRun: new Date().toISOString(),
-  });
+// ===== تحديث المهام =====
+async function updateQuests(id, quests) {
+    return updateAccount(id, {
+        quests: quests,
+        lastRun: new Date().toISOString(),
+    });
 }
 
 module.exports = {
-  addAccount: addAccount,
-  removeAccount: removeAccount,
-  getAccount: getAccount,
-  getAllAccounts: getAllAccounts,
-  updateAccount: updateAccount,
-  updateQuests: updateQuests,
+    addAccount,
+    removeAccount,
+    getAccount,
+    getAllAccounts,
+    updateAccount,
+    updateQuests,
 };

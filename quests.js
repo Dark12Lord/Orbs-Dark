@@ -1,3 +1,39 @@
+// quests.js - محرك المهام باستخدام djs-selfbot-v13
+const { Client } = require('djs-selfbot-v13');
+
+function renderProgressBar(percent, width = 20) {
+    const filled = Math.round((percent / 100) * width);
+    const empty = width - filled;
+    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percent}%`;
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function getQuestName(quest) {
+    return quest.config?.messages?.questName || quest.config?.messages?.quest_name || quest.id;
+}
+
+function getQuestType(quest) {
+    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
+    if (!taskConfig?.tasks) return 'UNKNOWN';
+    if (taskConfig.tasks.WATCH_VIDEO || taskConfig.tasks.WATCH_VIDEO_ON_MOBILE) return 'WATCH_VIDEO';
+    if (taskConfig.tasks.PLAY_ON_DESKTOP) return 'PLAY_ON_DESKTOP';
+    if (taskConfig.tasks.PLAY_ACTIVITY) return 'PLAY_ACTIVITY';
+    return 'UNKNOWN';
+}
+
+function getVideoDuration(quest) {
+    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
+    return taskConfig?.tasks?.WATCH_VIDEO?.videoDurationMs || 
+           taskConfig?.tasks?.WATCH_VIDEO_ON_MOBILE?.videoDurationMs || 
+           900000;
+}
+
+function getApplicationId(quest) {
+    const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
+    return taskConfig?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id || null;
+}
+
 async function solveSequentially(token, onUpdate) {
     const results = [];
     console.log('\n' + '='.repeat(50));
@@ -19,19 +55,17 @@ async function solveSequentially(token, onUpdate) {
             return { success: true, quests: [] };
         }
 
+        console.log('📋 قائمة المهام:');
+        validQuests.forEach((q, i) => {
+            console.log(`   ${i + 1}. ${getQuestName(q)} [${getQuestType(q)}]`);
+        });
+        console.log('');
+
         for (let i = 0; i < validQuests.length; i++) {
             const quest = validQuests[i];
             const questId = quest.id;
             const questName = getQuestName(quest);
-            const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
-            
-            // تحديد نوع المهمة
-            let questType = 'UNKNOWN';
-            if (taskConfig?.tasks?.WATCH_VIDEO || taskConfig?.tasks?.WATCH_VIDEO_ON_MOBILE) {
-                questType = 'WATCH_VIDEO';
-            } else if (taskConfig?.tasks?.PLAY_ON_DESKTOP) {
-                questType = 'PLAY_ON_DESKTOP';
-            }
+            const questType = getQuestType(quest);
 
             console.log(`\n[${i + 1}/${validQuests.length}] ═══════════════════`);
             console.log(`   📌 ${questName} (${questType})`);
@@ -39,44 +73,45 @@ async function solveSequentially(token, onUpdate) {
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                // ✅ قبول المهمة أولاً
-                try {
-                    await client.quests.acceptQuest(questId);
-                    console.log(`   ✅ تم قبول المهمة`);
-                } catch (e) {
-                    console.log(`   ⚠️ القبول: ${e.message}`);
-                }
-
                 if (questType === 'WATCH_VIDEO') {
-                    // ✅ مهام الفيديو: إرسال videoProgress
-                    const durationMs = taskConfig?.tasks?.WATCH_VIDEO?.videoDurationMs || 900000;
-                    const totalSteps = Math.ceil(durationMs / 30000);
-                    
+                    const durationMs = getVideoDuration(quest);
+                    const speedMultiplier = 2.0;
+                    const intervalMs = 30000;
+                    const totalSteps = Math.ceil(durationMs / (intervalMs * speedMultiplier));
+
+                    console.log(`   ⏳ مدة: ${Math.round(durationMs / 60000)} دقيقة | خطوات: ${totalSteps}`);
+
                     for (let step = 1; step <= totalSteps; step++) {
-                        const timestamp = Math.min(step * 30000, durationMs);
+                        const timestamp = Math.min(step * intervalMs * speedMultiplier, durationMs);
                         await client.quests.videoProgress(questId, timestamp);
-                        
-                        const percent = Math.round((step / totalSteps) * 100);
+
+                        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
-                        
-                        await sleep(30000 + Math.random() * 3000);
+
+                        await sleep(intervalMs / speedMultiplier + Math.random() * 2000);
                     }
-                } else if (questType === 'PLAY_ON_DESKTOP') {
-                    // ✅ مهام اللعب: إرسال heartbeat
-                    const appId = taskConfig?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id;
+                } else if (questType === 'PLAY_ON_DESKTOP' || questType === 'PLAY_ACTIVITY') {
+                    const appId = getApplicationId(quest);
+                    if (!appId) throw new Error('application_id غير موجود');
+
                     const durationMs = 900000;
-                    const totalSteps = Math.ceil(durationMs / 60000);
-                    
+                    const intervalMs = 60000;
+                    const totalSteps = Math.ceil(durationMs / intervalMs);
+
+                    console.log(`   🎮 App: ${appId} | خطوات: ${totalSteps}`);
+
                     for (let step = 1; step <= totalSteps; step++) {
                         await client.quests.heartbeat(questId, appId);
-                        
-                        const percent = Math.round((step / totalSteps) * 100);
+
+                        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
-                        
-                        await sleep(60000 + Math.random() * 5000);
+
+                        await sleep(intervalMs + Math.random() * 5000);
                     }
+                } else {
+                    throw new Error(`نوع غير مدعوم: ${questType}`);
                 }
 
                 results.push({ id: questId, name: questName, status: 'COMPLETED' });
@@ -115,3 +150,6 @@ async function solveSequentially(token, onUpdate) {
         }
     }
 }
+
+// ✅ التصدير الصحيح
+module.exports = { solveSequentially };
