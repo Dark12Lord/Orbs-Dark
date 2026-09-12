@@ -6,6 +6,7 @@ class QuestBot {
         this.accountId = accountId;
         this.running = false;
         this.status = 'IDLE';
+        this.currentQuests = [];
     }
 
     async start(onUpdate) {
@@ -22,14 +23,38 @@ class QuestBot {
         this.status = 'RUNNING';
         database.updateAccount(this.accountId, { status: 'RUNNING' });
 
+        // ✅ مخزن مؤقت للمهام المحدثة
+        this.currentQuests = [];
+
         try {
-            const result = await solveSequentially(account.token, onUpdate);
+            const result = await solveSequentially(account.token, (update) => {
+                // ✅ 1. تحديث المخزن المؤقت
+                const existing = this.currentQuests.find(q => q.id === update.questId);
+                if (existing) {
+                    existing.status = update.status;
+                    if (update.percent !== undefined) existing.percent = update.percent;
+                    if (update.error) existing.error = update.error;
+                } else {
+                    this.currentQuests.push({
+                        id: update.questId,
+                        name: update.questName,
+                        status: update.status,
+                        percent: update.percent || 0,
+                        error: update.error || null,
+                    });
+                }
+
+                // ✅ 2. حفظ في قاعدة البيانات فوراً (عشان لوحة التحكم تشوفه)
+                database.updateQuests(this.accountId, this.currentQuests);
+
+                // ✅ 3. استدعاء callback الأصلي
+                if (onUpdate) onUpdate(update);
+            });
 
             if (result.success) {
-                // تحديث المهام في قاعدة البيانات
+                // تحديث المهام النهائية
                 database.updateQuests(this.accountId, result.quests);
 
-                // تحديد الحالة النهائية
                 const hasPending = result.quests.some(
                     q => q.status !== 'COMPLETED' && q.status !== 'REJECTED'
                 );

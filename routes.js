@@ -11,6 +11,16 @@ function requireAuth(req, res, next) {
     res.status(401).json({ error: "غير مصرح" });
 }
 
+// ✅ Middleware لمنع كاش API
+function noCache(req, res, next) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    next();
+}
+
+router.use(noCache);
+
 // ============ المصادقة ============
 
 router.post("/api/login", (req, res) => {
@@ -87,7 +97,8 @@ router.post("/api/accounts/:id/start", requireAuth, async (req, res) => {
 
     manager
         .startAccount(accountId, (update) => {
-            console.log(`[${account.name}] ${update.questName}: ${update.status} ${update.percent !== undefined ? update.percent + '%' : ''}`);
+            const percent = update.percent !== undefined ? ` ${update.percent}%` : '';
+            console.log(`[${account.name}] ${update.questName}: ${update.status}${percent}`);
         })
         .then((result) => {
             console.log(`[${account.name}] done: ${result.message || result.error}`);
