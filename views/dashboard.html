@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Dark Orbs — لوحة التحكم</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
@@ -61,7 +64,7 @@
         .account-status.idle { background: #333; color: #aaa; }
         .account-status.error { background: #7f1d1d; color: #fca5a5; }
 
-        .account-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
         .account-actions button {
             padding: 6px 14px; border-radius: 6px; border: none;
             font-size: 12px; cursor: pointer;
@@ -76,13 +79,15 @@
 
         .details-box {
             margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px;
-            display: none; font-size: 13px; max-height: 300px; overflow-y: auto;
+            display: none; font-size: 13px; max-height: 400px; overflow-y: auto;
         }
         .details-box.show { display: block; }
-        .quest-item { padding: 6px 0; border-bottom: 1px solid #1a1a24; display: flex; justify-content: space-between; align-items: center; }
+
+        .quest-item { padding: 8px 0; border-bottom: 1px solid #1a1a24; }
         .quest-item:last-child { border: none; }
-        .quest-name { flex: 1; }
-        .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+        .quest-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .quest-name { flex: 1; font-size: 13px; }
+        .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
         .quest-status.completed { background: #166534; color: #86efac; }
         .quest-status.rejected { background: #7f1d1d; color: #fca5a5; }
         .quest-status.running { background: #713f12; color: #fde047; }
@@ -93,8 +98,12 @@
         }
         .progress-fill {
             height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa);
-            border-radius: 3px; transition: width 0.3s ease;
+            border-radius: 3px; transition: width 0.5s ease;
         }
+        .progress-text {
+            font-size: 11px; color: #a78bfa; margin-top: 2px;
+        }
+        .quest-error { color: #ef4444; font-size: 11px; margin-top: 4px; }
 
         .empty { text-align: center; padding: 40px; color: #666; }
         .toast {
@@ -104,6 +113,15 @@
         }
         .toast.show { display: block; }
         .toast.error { border-right-color: #ef4444; }
+
+        .live-dot {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: #22c55e; margin-left: 6px; animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -117,7 +135,7 @@
 
         <div id="dashboardView" style="display: none;">
             <div class="header">
-                <h1>🟣 Dark Orbs</h1>
+                <h1>🟣 Dark Orbs <span class="live-dot"></span></h1>
                 <button onclick="logout()">خروج</button>
             </div>
 
@@ -135,6 +153,7 @@
 
     <script>
         let accounts = [];
+        let refreshInterval = null;
 
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
@@ -143,9 +162,23 @@
             setTimeout(() => t.classList.remove('show'), 4000);
         }
 
+        // ✅ fetch مع منع الكاش
+        async function noCacheFetch(url, options = {}) {
+            const separator = url.includes('?') ? '&' : '?';
+            const cacheBuster = url + separator + '_t=' + Date.now();
+            return fetch(cacheBuster, {
+                ...options,
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    ...(options.headers || {}),
+                },
+            });
+        }
+
         async function login() {
             const password = document.getElementById('passwordInput').value;
-            const res = await fetch('/api/login', {
+            const res = await noCacheFetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
@@ -159,12 +192,12 @@
         }
 
         async function logout() {
-            await fetch('/api/logout', { method: 'POST' });
+            await noCacheFetch('/api/logout', { method: 'POST' });
             location.reload();
         }
 
         async function checkAuth() {
-            const res = await fetch('/api/check');
+            const res = await noCacheFetch('/api/check');
             const data = await res.json();
             if (data.authenticated) showDashboard();
         }
@@ -173,12 +206,14 @@
             document.getElementById('loginView').style.display = 'none';
             document.getElementById('dashboardView').style.display = 'block';
             loadAccounts();
-            setInterval(loadAccounts, 10000);
+            // ✅ تحديث أسرع: كل 3 ثواني
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(loadAccounts, 3000);
         }
 
         async function loadAccounts() {
             try {
-                const res = await fetch('/api/accounts');
+                const res = await noCacheFetch('/api/accounts');
                 accounts = await res.json();
                 renderAccounts();
             } catch (e) {
@@ -194,10 +229,12 @@
             }
 
             container.innerHTML = accounts.map(acc => {
-                const completed = (acc.quests || []).filter(q => q.status === 'COMPLETED').length;
-                const rejected = (acc.quests || []).filter(q => q.status === 'REJECTED').length;
-                const pending = (acc.quests || []).filter(q =>
-                    q.status !== 'COMPLETED' && q.status !== 'REJECTED'
+                const quests = acc.quests || [];
+                const completed = quests.filter(q => q.status === 'COMPLETED').length;
+                const rejected = quests.filter(q => q.status === 'REJECTED').length;
+                const running = quests.filter(q => q.status === 'running').length;
+                const pending = quests.filter(q =>
+                    q.status !== 'COMPLETED' && q.status !== 'REJECTED' && q.status !== 'running'
                 ).length;
 
                 const statusClass = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
@@ -208,10 +245,6 @@
                     'error': '🔴 خطأ',
                 }[statusClass] || '⚪ متوقف';
 
-                // إظهار آخر خطأ إن وجد
-                const lastError = (acc.quests || []).find(q => q.error);
-                const errorHtml = lastError ? `<div style="color:#ef4444;font-size:12px;margin-top:8px;">⚠️ آخر خطأ: ${lastError.error}</div>` : '';
-
                 return `
                     <div class="account-card ${statusClass}">
                         <div class="account-header">
@@ -220,29 +253,32 @@
                         </div>
                         <div class="quest-stats">
                             <span>✅ ${completed} مكتملة</span>
+                            <span>▶️ ${running} شغالة</span>
                             <span>⏳ ${pending} معلقة</span>
                             <span>❌ ${rejected} مرفوضة</span>
                         </div>
-                        ${errorHtml}
-                        <div class="account-actions" style="margin-top: 10px;">
+                        <div class="account-actions">
                             <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
                             <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
                             <button class="btn-details" onclick="toggleDetails('${acc.id}')">📋 التفاصيل</button>
                             <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
                         </div>
                         <div class="details-box" id="details-${acc.id}">
-                            ${(acc.quests || []).map(q => `
+                            ${quests.length > 0 ? quests.map(q => `
                                 <div class="quest-item">
-                                    <span class="quest-name">${q.name || q.id}</span>
-                                    <span class="quest-status ${(q.status || '').toLowerCase()}">${q.status}</span>
-                                </div>
-                                ${q.percent !== undefined ? `
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" style="width: ${q.percent}%"></div>
+                                    <div class="quest-header">
+                                        <span class="quest-name">${q.name || q.id}</span>
+                                        <span class="quest-status ${(q.status || '').toLowerCase()}">${q.status}</span>
                                     </div>
-                                ` : ''}
-                                ${q.error ? `<div style="color:#ef4444;font-size:11px;">${q.error}</div>` : ''}
-                            `).join('') || '<div style="color:#666;">ما في مهام مسجلة</div>'}
+                                    ${q.status === 'running' || (q.percent !== undefined && q.percent > 0 && q.percent < 100) ? `
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${q.percent || 0}%"></div>
+                                        </div>
+                                        <div class="progress-text">${q.percent || 0}%</div>
+                                    ` : ''}
+                                    ${q.error ? `<div class="quest-error">⚠️ ${q.error}</div>` : ''}
+                                </div>
+                            `).join('') : '<div style="color:#666;">ما في مهام مسجلة</div>'}
                         </div>
                     </div>
                 `;
@@ -256,7 +292,7 @@
 
             showToast('جاري إضافة الحساب...');
             try {
-                const res = await fetch('/api/accounts', {
+                const res = await noCacheFetch('/api/accounts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token, name }),
@@ -277,22 +313,24 @@
 
         async function deleteAccount(id) {
             if (!confirm('متأكد تحذف الحساب؟')) return;
-            await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+            await noCacheFetch(`/api/accounts/${id}`, { method: 'DELETE' });
             loadAccounts();
         }
 
         async function startAccount(id) {
             showToast('جاري التشغيل...');
             try {
-                await fetch(`/api/accounts/${id}/start`, { method: 'POST' });
-                setTimeout(loadAccounts, 2000);
+                await noCacheFetch(`/api/accounts/${id}/start`, { method: 'POST' });
+                // تحديث سريع بعد البدء
+                setTimeout(loadAccounts, 1000);
+                setTimeout(loadAccounts, 3000);
             } catch (e) {
                 showToast('فشل التشغيل', true);
             }
         }
 
         async function stopAccount(id) {
-            await fetch(`/api/accounts/${id}/stop`, { method: 'POST' });
+            await noCacheFetch(`/api/accounts/${id}/stop`, { method: 'POST' });
             loadAccounts();
         }
 
@@ -300,6 +338,11 @@
             const el = document.getElementById(`details-${id}`);
             el.classList.toggle('show');
         }
+
+        // ✅ تنظيف الفاصل عند مغادرة الصفحة
+        window.addEventListener('beforeunload', () => {
+            if (refreshInterval) clearInterval(refreshInterval);
+        });
 
         checkAuth();
     </script>
