@@ -1,4 +1,4 @@
-// quests.js - محرك المهام باستخدام djs-selfbot-v13
+// quests.js - محرك المهام باستخدام djs-selfbot-v13 (مع debug)
 const { Client } = require('djs-selfbot-v13');
 
 function renderProgressBar(percent, width = 20) {
@@ -13,12 +13,40 @@ function getQuestName(quest) {
     return quest.config?.messages?.questName || quest.config?.messages?.quest_name || quest.id;
 }
 
+// ⭐ دالة محدثة مع debug
 function getQuestType(quest) {
+    // سجل البنية كاملة للمهمة الأولى فقط
+    if (!global._loggedFirstQuest) {
+        global._loggedFirstQuest = true;
+        console.log('\n🔍 ═══ بنية المهمة الأولى (كاملة) ═══');
+        console.log(JSON.stringify(quest, null, 2).slice(0, 5000));
+        console.log('\n🔑 مفاتيح المهمة:', Object.keys(quest).join(', '));
+        console.log('🔑 مفاتيح config:', Object.keys(quest.config || {}).join(', '));
+        
+        if (quest.config?.taskConfigV2) {
+            console.log('🔑 taskConfigV2 keys:', Object.keys(quest.config.taskConfigV2).join(', '));
+            if (quest.config.taskConfigV2.tasks) {
+                console.log('🔑 tasks keys:', Object.keys(quest.config.taskConfigV2.tasks).join(', '));
+            }
+        }
+        if (quest.config?.taskConfig) {
+            console.log('🔑 taskConfig keys:', Object.keys(quest.config.taskConfig).join(', '));
+        }
+        if (quest.config?.task_config) {
+            console.log('🔑 task_config keys:', Object.keys(quest.config.task_config).join(', '));
+        }
+        console.log('═══ نهاية البنية ═══\n');
+    }
+
     const taskConfig = quest.config?.taskConfigV2 || quest.config?.taskConfig || quest.config?.task_config;
     if (!taskConfig?.tasks) return 'UNKNOWN';
+    
     if (taskConfig.tasks.WATCH_VIDEO || taskConfig.tasks.WATCH_VIDEO_ON_MOBILE) return 'WATCH_VIDEO';
     if (taskConfig.tasks.PLAY_ON_DESKTOP) return 'PLAY_ON_DESKTOP';
     if (taskConfig.tasks.PLAY_ACTIVITY) return 'PLAY_ACTIVITY';
+    if (taskConfig.tasks.STREAM_ON_DESKTOP) return 'STREAM_ON_DESKTOP';
+    if (taskConfig.tasks.ACHIEVEMENT_IN_ACTIVITY) return 'ACHIEVEMENT_IN_ACTIVITY';
+    
     return 'UNKNOWN';
 }
 
