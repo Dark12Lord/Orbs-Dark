@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "discord.js-selfbot-v13": "3.7.1",
+    "djs-selfbot-v13": "^3.7.35",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
