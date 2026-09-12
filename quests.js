@@ -1,4 +1,4 @@
-// quests.js - محرك المهام المباشر مع تسجيل كامل لبنية المهمة
+// quests.js - محرك المهام المباشر (Enroll + Heartbeat + Video Progress)
 const axios = require("axios");
 const crypto = require("crypto");
 const config = require("./config");
@@ -43,6 +43,7 @@ function buildHeaders(token) {
     "X-Discord-Locale": "en-US",
     "X-Discord-Timezone": "Asia/Riyadh",
     "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://discord.com/quest-home",
   };
 }
 
@@ -64,75 +65,38 @@ function log(tag, msg, data) {
 async function fetchQuests(token) {
   log("fetchQuests", "🔄 جاري جلب المهام...");
   
-  try {
-    const res = await axios.get(`${DISCORD_API}/quests/@me`, {
-      headers: buildHeaders(token),
-      timeout: 15000,
-    });
+  const res = await axios.get(`${DISCORD_API}/quests/@me`, {
+    headers: buildHeaders(token),
+    timeout: 15000,
+  });
 
-    const data = res.data;
+  const data = res.data;
 
-    if (data && !Array.isArray(data)) {
-      log("fetchQuests", `مفاتيح الرد: ${Object.keys(data).join(", ")}`);
-      
-      if (data.quest_enrollment_blocked_until) {
-        log("fetchQuests", `⚠️ محظور من التسجيل حتى: ${data.quest_enrollment_blocked_until}`);
-      }
-      if (data.quest_access_suspended_until) {
-        log("fetchQuests", `⚠️ موقوف من الوصول حتى: ${data.quest_access_suspended_until}`);
-      }
+  if (data && !Array.isArray(data)) {
+    log("fetchQuests", `مفاتيح الرد: ${Object.keys(data).join(", ")}`);
+    if (data.quest_enrollment_blocked_until) {
+      log("fetchQuests", `⚠️ محظور من التسجيل حتى: ${data.quest_enrollment_blocked_until}`);
     }
-
-    let quests = [];
-    if (Array.isArray(data)) quests = data;
-    else if (data?.quests && Array.isArray(data.quests)) quests = data.quests;
-    else if (data?.data && Array.isArray(data.data)) quests = data.data;
-
-    log("fetchQuests", `✅ عدد المهام: ${quests.length}`);
-
-    // ⭐ تسجيل بنية المهمة الأولى كاملة (عشان نعرف الحقول الحقيقية)
-    if (quests.length > 0) {
-      log("fetchQuests", "🔍 بنية المهمة الأولى (كاملة):");
-      console.log(JSON.stringify(quests[0], null, 2).slice(0, 3000));
-      
-      // سجل مفاتيح المستوى الأول
-      log("fetchQuests", `مفاتيح المهمة: ${Object.keys(quests[0]).join(", ")}`);
-      
-      // لو فيه config، سجل مفاتيحه
-      if (quests[0].config) {
-        log("fetchQuests", `مفاتيح config: ${Object.keys(quests[0].config).join(", ")}`);
-      }
-      if (quests[0].config?.task_config) {
-        log("fetchQuests", `مفاتيح task_config: ${Object.keys(quests[0].config.task_config).join(", ")}`);
-      }
-      if (quests[0].config?.taskConfig) {
-        log("fetchQuests", `مفاتيح taskConfig: ${Object.keys(quests[0].config.taskConfig).join(", ")}`);
-      }
-      if (quests[0].user_status) {
-        log("fetchQuests", `مفاتيح user_status: ${Object.keys(quests[0].user_status).join(", ")}`);
-      }
-      if (quests[0].userStatus) {
-        log("fetchQuests", `مفاتيح userStatus: ${Object.keys(quests[0].userStatus).join(", ")}`);
-      }
+    if (data.quest_access_suspended_until) {
+      log("fetchQuests", `⚠️ موقوف من الوصول حتى: ${data.quest_access_suspended_until}`);
     }
-
-    return quests;
-  } catch (err) {
-    const status = err.response?.status || "?";
-    const msg = err.response?.data?.message || err.message;
-    log("fetchQuests", `❌ فشل الجلب [${status}]: ${msg}`);
-    throw err;
   }
+
+  let quests = [];
+  if (Array.isArray(data)) quests = data;
+  else if (data?.quests && Array.isArray(data.quests)) quests = data.quests;
+  else if (data?.data && Array.isArray(data.data)) quests = data.data;
+
+  log("fetchQuests", `✅ عدد المهام: ${quests.length}`);
+  return quests;
 }
 
-// ===== استخراج الحقول (مرن جداً) =====
+// ===== استخراج البيانات =====
 function getQuestStatus(quest) {
   const s =
     quest.user_status?.status ||
     quest.userStatus?.status ||
-    quest.user_status?.completed_at && "COMPLETED" ||
     quest.status ||
-    quest.state ||
     "UNKNOWN";
   return String(s).toUpperCase();
 }
@@ -141,17 +105,13 @@ function getQuestName(quest) {
   return (
     quest.config?.messages?.quest_name ||
     quest.config?.messages?.questName ||
-    quest.config?.messages?.quest_content?.default ||
     quest.name ||
-    quest.title ||
     quest.id ||
     "quest"
   );
 }
 
-// ⭐ استخراج النوع بشكل مرن جداً
 function getQuestType(quest) {
-  // جرب كل المسارات الممكنة
   const candidates = [
     quest.config?.task_config?.task_type,
     quest.config?.taskConfig?.taskType,
@@ -163,19 +123,16 @@ function getQuestType(quest) {
     quest.task_type,
     quest.taskType,
   ];
-
   for (const c of candidates) {
     if (c && typeof c === "string") return c.toUpperCase();
   }
-
-  // ⭐ لو ما لقينا، نستنتج من وجود حقول معينة
+  // استنتاج من الحقول
   const config = quest.config || {};
   if (config.video_duration_ms || config.videoDurationMs) return "WATCH_VIDEO";
   if (config.application && config.application.id) return "PLAY_ON_DESKTOP";
   if (config.stream_duration_ms) return "STREAM_ON_DESKTOP";
   if (config.activity) return "PLAY_ACTIVITY";
   if (config.achievement) return "ACHIEVEMENT";
-
   return "UNKNOWN";
 }
 
@@ -209,26 +166,27 @@ function getDuration(quest) {
   );
 }
 
-// ===== قبول المهمة =====
-async function acceptQuest(token, questId) {
-  log("accept", `📝 قبول ${questId}...`);
+// ===== ⭐ التسجيل في المهمة (Enroll) =====
+async function enrollQuest(token, questId) {
+  log("enroll", `📝 تسجيل ${questId}...`);
   try {
     const res = await axios.post(
-      `${DISCORD_API}/quests/${questId}/accept`,
+      `${DISCORD_API}/quests/${questId}/enroll`,
       {},
       { headers: buildHeaders(token), timeout: 15000 }
     );
-    log("accept", `✅ مقبولة [${res.status}]`);
+    log("enroll", `✅ تم التسجيل [${res.status}]`);
     return true;
   } catch (err) {
     const status = err.response?.status;
     const msg = err.response?.data?.message || err.message;
+    // 400 = مسجل مسبقاً، مو مشكلة
     if (status === 400) {
-      log("accept", `⚠️ مقبولة مسبقاً`);
+      log("enroll", `⚠️ مسجل مسبقاً`);
       return true;
     }
-    log("accept", `❌ فشل [${status}]: ${msg}`);
-    throw new Error(`accept failed [${status}]: ${msg}`);
+    log("enroll", `❌ فشل [${status}]: ${msg}`);
+    throw new Error(`enroll failed [${status}]: ${msg}`);
   }
 }
 
@@ -244,8 +202,10 @@ async function solveVideoQuest(token, quest, onUpdate) {
 
   log("video", `🎬 ${questName} - مدة: ${durationMs}ms, خطوات: ${totalSteps}`);
 
-  await acceptQuest(token, questId);
+  // 1. التسجيل في المهمة
+  await enrollQuest(token, questId);
 
+  // 2. إرسال التقدم
   let successCount = 0;
   let failCount = 0;
 
@@ -310,8 +270,10 @@ async function solveGameQuest(token, quest, onUpdate) {
 
   log("game", `🎮 ${questName} - app: ${applicationId}, مدة: ${durationMs}ms`);
 
-  await acceptQuest(token, questId);
+  // 1. التسجيل في المهمة
+  await enrollQuest(token, questId);
 
+  // 2. إرسال النبضات
   const totalSteps = Math.ceil(durationMs / intervalMs);
   let successCount = 0;
   let failCount = 0;
@@ -369,11 +331,9 @@ async function solveSequentially(token, onUpdate) {
 
   try {
     const quests = await fetchQuests(token);
-
     if (!Array.isArray(quests)) {
       return { success: false, error: "fetchQuests لم يُرجع مصفوفة" };
     }
-
     if (quests.length === 0) {
       return { success: true, quests: [], message: "لا توجد مهام" };
     }
@@ -398,7 +358,6 @@ async function solveSequentially(token, onUpdate) {
 
     log("main", `📊 معلقة: ${pending.length} | مكتملة: ${alreadyDone.length}`);
 
-    // تفصيل الأنواع
     const typeCounts = {};
     for (const q of pending) {
       const t = getQuestType(q);
@@ -456,9 +415,7 @@ async function solveSequentially(token, onUpdate) {
           reward: 0,
           error: err.message,
         });
-
         log("main", `❌ ${questName} - ${err.message}`);
-
         if (onUpdate) {
           onUpdate({ questId, questName, status: "rejected", error: err.message });
         }
