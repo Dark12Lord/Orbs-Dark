@@ -7,10 +7,11 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "express-session": "^1.18.0",
+    "axios": "^1.7.7",
     "discord-quests": "^1.0.4",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
   },
   "engines": {
     "node": ">=18.0.0"
