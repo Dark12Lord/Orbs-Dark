@@ -14,39 +14,140 @@ function buildHeaders(token) {
   };
 }
 
-// تأخير عشوائي (Jitter) لتجنب الكشف
+// تأخير عشوائي (Jitter)
 function jitter(minMs, maxMs) {
   const delay = Math.floor(Math.random() * (maxMs - minMs) + minMs);
   return new Promise((resolve) => setTimeout(resolve, delay));
 }
 
-// ===== جلب المهام =====
+// ===== جلب المهام (معالج بشكل مرن) =====
 async function fetchQuests(token) {
   const res = await axios.get(`${DISCORD_API}/quests/@me`, {
     headers: buildHeaders(token),
   });
-  return res.data;
+
+  const data = res.data;
+
+  // سجل للتشخيص
+  console.log("[fetchQuests] type:", typeof data, "| isArray:", Array.isArray(data));
+  if (data && !Array.isArray(data)) {
+    console.log("[fetchQuests] keys:", Object.keys(data).join(", "));
+  }
+
+  // محاولة استخراج المصفوفة من أي مكان محتمل
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.quests)) return data.quests;
+  if (data && Array.isArray(data.data)) return data.data;
+  if (data && Array.isArray(data.items)) return data.items;
+
+  console.log("[fetchQuests] unexpected shape:", JSON.stringify(data).slice(0, 300));
+  return [];
 }
 
-// ===== حل مهمة فيديو (WATCH_VIDEO) =====
+// ===== استخراج حالة المهمة =====
+function getQuestStatus(quest) {
+  const s =
+    quest.user_status?.status ||
+    quest.userStatus?.status ||
+    quest.status ||
+    quest.state ||
+    "UNKNOWN";
+  return String(s).toUpperCase();
+}
+
+// ===== استخراج اسم المهمة =====
+function getQuestName(quest) {
+  return (
+    quest.config?.messages?.quest_name ||
+    quest.config?.messages?.questName ||
+    quest.name ||
+    quest.title ||
+    quest.id ||
+    "quest"
+  );
+}
+
+// ===== استخراج نوع المهمة =====
+function getQuestType(quest) {
+  return (
+    quest.config?.task_config?.task_type ||
+    quest.config?.taskConfig?.taskType ||
+    quest.type ||
+    "UNKNOWN"
+  );
+}
+
+// ===== استخراج مكافأة المهمة =====
+function getQuestReward(quest) {
+  return (
+    quest.config?.rewards_config?.orb_reward ||
+    quest.config?.rewardsConfig?.orbReward ||
+    quest.reward ||
+    0
+  );
+}
+
+// ===== استخراج application_id =====
+function getApplicationId(quest) {
+  return (
+    quest.config?.application?.id ||
+    quest.config?.application_id ||
+    quest.application_id ||
+    null
+  );
+}
+
+// ===== استخراج مدة المهمة =====
+function getDuration(quest) {
+  return (
+    quest.config?.task_config?.duration ||
+    quest.config?.taskConfig?.durationMs ||
+    quest.config?.task_config?.video_duration_ms ||
+    900000
+  );
+}
+
+// ===== التسجيل في المهمة (Enroll) =====
+async function enrollQuest(token, questId) {
+  try {
+    await axios.post(
+      `${DISCORD_API}/quests/${questId}/enroll`,
+      {},
+      { headers: buildHeaders(token), timeout: 15000 }
+    );
+    console.log(`[enroll] ${questId}: enrolled`);
+    return true;
+  } catch (err) {
+    // 400 = مسجل مسبقاً، مو مشكلة
+    if (err.response && err.response.status === 400) {
+      console.log(`[enroll] ${questId}: already enrolled`);
+      return true;
+    }
+    console.log(`[enroll] ${questId}: failed (${err.response?.status || err.message})`);
+    return false;
+  }
+}
+
+// ===== حل مهمة فيديو =====
 async function solveVideoQuest(token, quest, onUpdate) {
   const questId = quest.id;
-  const durationMs = quest.config?.taskConfig?.videoDurationMs || 900000; // 15 دقيقة افتراضي
-  const speedMultiplier = 2.0; // تسريع 2x
-  const intervalMs = 30000; // 30 ثانية
+  const questName = getQuestName(quest);
+  const durationMs = getDuration(quest);
+  const speedMultiplier = 2.0;
+  const intervalMs = 30000;
   const effectiveInterval = intervalMs / speedMultiplier;
   const totalSteps = Math.ceil(durationMs / (intervalMs * speedMultiplier));
 
+  // تسجيل أولاً
+  await enrollQuest(token, questId);
+
   for (let step = 1; step <= totalSteps; step++) {
-    // توقف لو المستخدم ضغط إيقاف
     if (global.stopFlags && global.stopFlags.has(questId)) {
       throw new Error("تم الإيقاف يدوياً");
     }
 
-    // حساب التقدم مع jitter
     const baseTimestamp = Math.min(step * intervalMs * speedMultiplier, durationMs);
-    const jitterMs = Math.random() * 500; // 0-500ms
-    const timestamp = Math.floor(baseTimestamp + jitterMs);
+    const timestamp = Math.floor(baseTimestamp + Math.random() * 500);
 
     try {
       await axios.post(
@@ -55,51 +156,52 @@ async function solveVideoQuest(token, quest, onUpdate) {
         { headers: buildHeaders(token), timeout: 15000 }
       );
     } catch (err) {
-      // 429 = Rate Limit، ننتظر ونكمل
       if (err.response && err.response.status === 429) {
         const retryAfter = (err.response.data?.retry_after || 5) * 1000;
         await new Promise((r) => setTimeout(r, retryAfter));
         continue;
       }
-      throw err;
+      const status = err.response?.status || "?";
+      const msg = err.response?.data?.message || err.message;
+      throw new Error(`video-progress failed [${status}]: ${msg}`);
     }
 
     if (onUpdate) {
       const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-      onUpdate({ questId, questName: quest.config?.messages?.questName || questId, status: "running", percent });
+      onUpdate({ questId, questName, status: "running", percent });
     }
 
-    // انتظار مع jitter
-    const waitTime = effectiveInterval + Math.random() * 3000;
-    await new Promise((r) => setTimeout(r, waitTime));
+    await new Promise((r) => setTimeout(r, effectiveInterval + Math.random() * 3000));
   }
 
   return true;
 }
 
-// ===== حل مهمة لعب (PLAY_ON_DESKTOP) =====
+// ===== حل مهمة لعب =====
 async function solveGameQuest(token, quest, onUpdate) {
   const questId = quest.id;
-  const applicationId = quest.config?.application?.id;
-  const durationMs = quest.config?.taskConfig?.durationMs || 900000;
-  const intervalMs = 60000; // 60 ثانية
+  const questName = getQuestName(quest);
+  const applicationId = getApplicationId(quest);
+  const durationMs = getDuration(quest);
+  const intervalMs = 60000;
 
   if (!applicationId) {
-    throw new Error("لا يوجد application_id لهذه المهمة");
+    throw new Error("application_id غير موجود للمهمة");
   }
+
+  // تسجيل أولاً
+  await enrollQuest(token, questId);
 
   const totalSteps = Math.ceil(durationMs / intervalMs);
 
   for (let step = 1; step <= totalSteps; step++) {
-    // توقف لو المستخدم ضغط إيقاف
     if (global.stopFlags && global.stopFlags.has(questId)) {
       throw new Error("تم الإيقاف يدوياً");
     }
 
     try {
-      // إرسال heartbeat مع application_id
       await axios.post(
-        `${DISCORD_API}/quests/${questId}/heartbeats`,
+        `${DISCORD_API}/quests/${questId}/heartbeat`,
         {
           application_id: applicationId,
           terminal: false,
@@ -112,15 +214,16 @@ async function solveGameQuest(token, quest, onUpdate) {
         await new Promise((r) => setTimeout(r, retryAfter));
         continue;
       }
-      throw err;
+      const status = err.response?.status || "?";
+      const msg = err.response?.data?.message || err.message;
+      throw new Error(`heartbeat failed [${status}]: ${msg}`);
     }
 
     if (onUpdate) {
       const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-      onUpdate({ questId, questName: quest.config?.messages?.questName || questId, status: "running", percent });
+      onUpdate({ questId, questName, status: "running", percent });
     }
 
-    // انتظار مع jitter (بين 58-65 ثانية)
     await new Promise((r) => setTimeout(r, intervalMs + Math.random() * 7000));
   }
 
@@ -132,42 +235,42 @@ async function solveSequentially(token, onUpdate) {
   const results = [];
 
   try {
-    // 1. جلب المهام
     const quests = await fetchQuests(token);
 
-    if (!quests || quests.length === 0) {
+    if (!Array.isArray(quests)) {
+      return { success: false, error: "fetchQuests لم يُرجع مصفوفة" };
+    }
+
+    if (quests.length === 0) {
       return { success: true, quests: [], message: "لا توجد مهام متاحة" };
     }
 
-    // 2. فلترة المهام غير المكتملة
     const pending = quests.filter((q) => {
-      const status = String(q.status || q.userStatus?.status || "").toUpperCase();
+      const status = getQuestStatus(q);
       return status !== "COMPLETED" && status !== "CLAIMED" && status !== "REJECTED";
     });
 
-    // 3. المهام المكتملة مسبقاً
     const alreadyDone = quests
       .filter((q) => {
-        const status = String(q.status || q.userStatus?.status || "").toUpperCase();
+        const status = getQuestStatus(q);
         return status === "COMPLETED" || status === "CLAIMED" || status === "REJECTED";
       })
       .map((q) => ({
         id: q.id,
-        name: q.config?.messages?.questName || q.id,
-        type: q.config?.taskConfig?.taskType || "UNKNOWN",
-        status: String(q.status || q.userStatus?.status || "UNKNOWN").toUpperCase(),
-        reward: q.config?.rewardsConfig?.orbReward || 0,
+        name: getQuestName(q),
+        type: getQuestType(q),
+        status: getQuestStatus(q),
+        reward: getQuestReward(q),
       }));
 
     if (pending.length === 0) {
       return { success: true, quests: alreadyDone, message: "كل المهام مكتملة مسبقاً" };
     }
 
-    // 4. حل المهام واحدة واحدة
     for (const quest of pending) {
       const questId = quest.id;
-      const questName = quest.config?.messages?.questName || questId;
-      const questType = quest.config?.taskConfig?.taskType || "UNKNOWN";
+      const questName = getQuestName(quest);
+      const questType = getQuestType(quest);
 
       try {
         if (onUpdate) {
@@ -176,10 +279,10 @@ async function solveSequentially(token, onUpdate) {
 
         if (questType === "WATCH_VIDEO" || questType === "WATCH_VIDEO_ON_MOBILE") {
           await solveVideoQuest(token, quest, onUpdate);
-        } else if (questType === "PLAY_ON_DESKTOP") {
+        } else if (questType === "PLAY_ON_DESKTOP" || questType === "PLAY_ACTIVITY") {
           await solveGameQuest(token, quest, onUpdate);
         } else {
-          throw new Error(`نوع المهمة غير مدعوم: ${questType}`);
+          throw new Error(`نوع غير مدعوم: ${questType}`);
         }
 
         results.push({
@@ -187,14 +290,13 @@ async function solveSequentially(token, onUpdate) {
           name: questName,
           type: questType,
           status: "COMPLETED",
-          reward: quest.config?.rewardsConfig?.orbReward || 0,
+          reward: getQuestReward(quest),
         });
 
         if (onUpdate) {
           onUpdate({ questId, questName, status: "completed", percent: 100 });
         }
 
-        // تأخير بين المهام (5-15 ثانية)
         await jitter(5000, 15000);
       } catch (err) {
         results.push({
