@@ -8,10 +8,9 @@
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
         body { background: #0d0d12; color: #e0e0e0; min-height: 100vh; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; }
-        
-        /* تسجيل الدخول */
-        .login-box { 
-            background: #1a1a24; padding: 40px; border-radius: 16px; 
+
+        .login-box {
+            background: #1a1a24; padding: 40px; border-radius: 16px;
             max-width: 400px; margin: 100px auto; text-align: center;
         }
         .login-box h1 { color: #a78bfa; margin-bottom: 20px; font-size: 24px; }
@@ -25,7 +24,6 @@
         }
         .login-box button:hover { background: #6d28d9; }
 
-        /* الهيدر */
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
         .header h1 { color: #a78bfa; font-size: 22px; }
         .header button {
@@ -33,7 +31,6 @@
             background: transparent; color: #e0e0e0; cursor: pointer; font-size: 14px;
         }
 
-        /* إضافة حساب */
         .add-box {
             background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px;
             display: flex; gap: 10px; flex-wrap: wrap;
@@ -48,7 +45,6 @@
             background: #7c3aed; color: #fff; cursor: pointer; font-size: 14px;
         }
 
-        /* الحسابات */
         .account-card {
             background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px;
             border-right: 4px solid #333;
@@ -77,10 +73,9 @@
 
         .quest-stats { margin-top: 10px; font-size: 13px; color: #aaa; }
         .quest-stats span { margin-left: 12px; }
-        
-        /* تفاصيل المهام */
-        .details-box { 
-            margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px; 
+
+        .details-box {
+            margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px;
             display: none; font-size: 13px;
         }
         .details-box.show { display: block; }
@@ -89,13 +84,19 @@
         .quest-completed { color: #22c55e; }
         .quest-rejected { color: #ef4444; }
         .quest-pending { color: #f59e0b; }
+        .quest-claimed { color: #a78bfa; }
 
         .empty { text-align: center; padding: 40px; color: #666; }
+        .toast {
+            position: fixed; bottom: 20px; right: 20px; background: #1a1a24;
+            padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed;
+            display: none; z-index: 999;
+        }
+        .toast.show { display: block; }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- تسجيل الدخول -->
         <div id="loginView" class="login-box">
             <h1>🟣 Dark Orbs</h1>
             <input type="password" id="passwordInput" placeholder="كلمة المرور" />
@@ -103,7 +104,6 @@
             <p id="loginError" style="color: #ef4444; margin-top: 10px; font-size: 14px;"></p>
         </div>
 
-        <!-- الداشبورد -->
         <div id="dashboardView" style="display: none;">
             <div class="header">
                 <h1>🟣 Dark Orbs</h1>
@@ -112,18 +112,26 @@
 
             <div class="add-box">
                 <input type="text" id="tokenInput" placeholder="الصق توكن الحساب هنا..." />
-                <input type="text" id="nameInput" placeholder="اسم الحساب (اختياري)" style="max-width: 150px;" />
+                <input type="text" id="nameInput" placeholder="اسم (اختياري)" style="max-width: 150px;" />
                 <button onclick="addAccount()">إضافة</button>
             </div>
 
             <div id="accountsList"></div>
         </div>
+
+        <div class="toast" id="toast"></div>
     </div>
 
     <script>
         let accounts = [];
 
-        // ===== المصادقة =====
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
         async function login() {
             const password = document.getElementById('passwordInput').value;
             const res = await fetch('/api/login', {
@@ -154,10 +162,9 @@
             document.getElementById('loginView').style.display = 'none';
             document.getElementById('dashboardView').style.display = 'block';
             loadAccounts();
-            setInterval(loadAccounts, 10000); // تحديث كل 10 ثواني
+            setInterval(loadAccounts, 10000);
         }
 
-        // ===== الحسابات =====
         async function loadAccounts() {
             const res = await fetch('/api/accounts');
             accounts = await res.json();
@@ -174,8 +181,8 @@
             container.innerHTML = accounts.map(acc => {
                 const completed = (acc.quests || []).filter(q => q.status === 'COMPLETED').length;
                 const rejected = (acc.quests || []).filter(q => q.status === 'REJECTED').length;
-                const pending = (acc.quests || []).filter(q => 
-                    q.status !== 'COMPLETED' && q.status !== 'REJECTED'
+                const pending = (acc.quests || []).filter(q =>
+                    q.status !== 'COMPLETED' && q.status !== 'REJECTED' && q.status !== 'CLAIMED'
                 ).length;
 
                 const statusClass = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
@@ -207,7 +214,7 @@
                             ${(acc.quests || []).map(q => `
                                 <div class="quest-item">
                                     <span>${q.name || q.id}</span>
-                                    <span class="quest-${q.status.toLowerCase()}">${q.status}</span>
+                                    <span class="quest-${(q.status || '').toLowerCase()}">${q.status}</span>
                                 </div>
                             `).join('') || '<div style="color:#666;">ما في مهام مسجلة</div>'}
                         </div>
@@ -217,10 +224,11 @@
         }
 
         async function addAccount() {
-            const token = document.getElementById('tokenInput').value;
-            const name = document.getElementById('nameInput').value;
-            if (!token) return alert('الصق التوكن أول');
+            const token = document.getElementById('tokenInput').value.trim();
+            const name = document.getElementById('nameInput').value.trim();
+            if (!token) return showToast('الصق التوكن أول');
 
+            showToast('جاري إضافة الحساب...');
             const res = await fetch('/api/accounts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -230,9 +238,10 @@
             if (data.success) {
                 document.getElementById('tokenInput').value = '';
                 document.getElementById('nameInput').value = '';
+                showToast('تم إضافة: ' + data.name);
                 loadAccounts();
             } else {
-                alert(data.error);
+                showToast('خطأ: ' + data.error);
             }
         }
 
@@ -243,8 +252,9 @@
         }
 
         async function startAccount(id) {
+            showToast('جاري التشغيل...');
             await fetch(`/api/accounts/${id}/start`, { method: 'POST' });
-            loadAccounts();
+            setTimeout(loadAccounts, 2000);
         }
 
         async function stopAccount(id) {
@@ -257,7 +267,6 @@
             el.classList.toggle('show');
         }
 
-        // تشغيل عند التحميل
         checkAuth();
     </script>
 </body>
