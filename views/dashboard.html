@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Orbs — لوحة التحكم</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
+        body { background: #0d0d12; color: #e0e0e0; min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        /* تسجيل الدخول */
+        .login-box { 
+            background: #1a1a24; padding: 40px; border-radius: 16px; 
+            max-width: 400px; margin: 100px auto; text-align: center;
+        }
+        .login-box h1 { color: #a78bfa; margin-bottom: 20px; font-size: 24px; }
+        .login-box input {
+            width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333;
+            background: #0d0d12; color: #fff; font-size: 16px; margin-bottom: 16px;
+        }
+        .login-box button {
+            width: 100%; padding: 14px; border-radius: 10px; border: none;
+            background: #7c3aed; color: #fff; font-size: 16px; cursor: pointer;
+        }
+        .login-box button:hover { background: #6d28d9; }
+
+        /* الهيدر */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .header h1 { color: #a78bfa; font-size: 22px; }
+        .header button {
+            padding: 8px 16px; border-radius: 8px; border: 1px solid #555;
+            background: transparent; color: #e0e0e0; cursor: pointer; font-size: 14px;
+        }
+
+        /* إضافة حساب */
+        .add-box {
+            background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px;
+            display: flex; gap: 10px; flex-wrap: wrap;
+        }
+        .add-box input {
+            flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333;
+            background: #0d0d12; color: #fff; font-size: 14px;
+        }
+        .add-box input::placeholder { color: #666; }
+        .add-box button {
+            padding: 12px 24px; border-radius: 8px; border: none;
+            background: #7c3aed; color: #fff; cursor: pointer; font-size: 14px;
+        }
+
+        /* الحسابات */
+        .account-card {
+            background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px;
+            border-right: 4px solid #333;
+        }
+        .account-card.running { border-right-color: #22c55e; }
+        .account-card.done { border-right-color: #a78bfa; }
+        .account-card.error { border-right-color: #ef4444; }
+
+        .account-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .account-name { font-size: 16px; font-weight: bold; }
+        .account-status { font-size: 12px; padding: 2px 10px; border-radius: 20px; background: #333; }
+        .account-status.running { background: #166534; color: #86efac; }
+        .account-status.done { background: #4c1d95; color: #c4b5fd; }
+        .account-status.idle { background: #333; color: #aaa; }
+        .account-status.error { background: #7f1d1d; color: #fca5a5; }
+
+        .account-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .account-actions button {
+            padding: 6px 14px; border-radius: 6px; border: none;
+            font-size: 12px; cursor: pointer;
+        }
+        .btn-start { background: #16a34a; color: #fff; }
+        .btn-stop { background: #dc2626; color: #fff; }
+        .btn-details { background: #333; color: #e0e0e0; }
+        .btn-delete { background: #333; color: #ef4444; }
+
+        .quest-stats { margin-top: 10px; font-size: 13px; color: #aaa; }
+        .quest-stats span { margin-left: 12px; }
+        
+        /* تفاصيل المهام */
+        .details-box { 
+            margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px; 
+            display: none; font-size: 13px;
+        }
+        .details-box.show { display: block; }
+        .quest-item { padding: 6px 0; border-bottom: 1px solid #1a1a24; display: flex; justify-content: space-between; }
+        .quest-item:last-child { border: none; }
+        .quest-completed { color: #22c55e; }
+        .quest-rejected { color: #ef4444; }
+        .quest-pending { color: #f59e0b; }
+
+        .empty { text-align: center; padding: 40px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- تسجيل الدخول -->
+        <div id="loginView" class="login-box">
+            <h1>🟣 Dark Orbs</h1>
+            <input type="password" id="passwordInput" placeholder="كلمة المرور" />
+            <button onclick="login()">دخول</button>
+            <p id="loginError" style="color: #ef4444; margin-top: 10px; font-size: 14px;"></p>
+        </div>
+
+        <!-- الداشبورد -->
+        <div id="dashboardView" style="display: none;">
+            <div class="header">
+                <h1>🟣 Dark Orbs</h1>
+                <button onclick="logout()">خروج</button>
+            </div>
+
+            <div class="add-box">
+                <input type="text" id="tokenInput" placeholder="الصق توكن الحساب هنا..." />
+                <input type="text" id="nameInput" placeholder="اسم الحساب (اختياري)" style="max-width: 150px;" />
+                <button onclick="addAccount()">إضافة</button>
+            </div>
+
+            <div id="accountsList"></div>
+        </div>
+    </div>
+
+    <script>
+        let accounts = [];
+
+        // ===== المصادقة =====
+        async function login() {
+            const password = document.getElementById('passwordInput').value;
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                showDashboard();
+            } else {
+                document.getElementById('loginError').textContent = data.error;
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            location.reload();
+        }
+
+        async function checkAuth() {
+            const res = await fetch('/api/check');
+            const data = await res.json();
+            if (data.authenticated) showDashboard();
+        }
+
+        function showDashboard() {
+            document.getElementById('loginView').style.display = 'none';
+            document.getElementById('dashboardView').style.display = 'block';
+            loadAccounts();
+            setInterval(loadAccounts, 10000); // تحديث كل 10 ثواني
+        }
+
+        // ===== الحسابات =====
+        async function loadAccounts() {
+            const res = await fetch('/api/accounts');
+            accounts = await res.json();
+            renderAccounts();
+        }
+
+        function renderAccounts() {
+            const container = document.getElementById('accountsList');
+            if (accounts.length === 0) {
+                container.innerHTML = '<div class="empty">ما في حسابات. أضف واحد فوق 👆</div>';
+                return;
+            }
+
+            container.innerHTML = accounts.map(acc => {
+                const completed = (acc.quests || []).filter(q => q.status === 'COMPLETED').length;
+                const rejected = (acc.quests || []).filter(q => q.status === 'REJECTED').length;
+                const pending = (acc.quests || []).filter(q => 
+                    q.status !== 'COMPLETED' && q.status !== 'REJECTED'
+                ).length;
+
+                const statusClass = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
+                const statusText = {
+                    'running': '🟢 شغال',
+                    'done': '✅ خلص',
+                    'idle': '⚪ متوقف',
+                    'error': '🔴 خطأ',
+                }[statusClass] || '⚪ متوقف';
+
+                return `
+                    <div class="account-card ${statusClass}">
+                        <div class="account-header">
+                            <div class="account-name">${acc.name}</div>
+                            <div class="account-status ${statusClass}">${statusText}</div>
+                        </div>
+                        <div class="quest-stats">
+                            <span>✅ ${completed} مكتملة</span>
+                            <span>⏳ ${pending} معلقة</span>
+                            <span>❌ ${rejected} مرفوضة</span>
+                        </div>
+                        <div class="account-actions" style="margin-top: 10px;">
+                            <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
+                            <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
+                            <button class="btn-details" onclick="toggleDetails('${acc.id}')">📋 التفاصيل</button>
+                            <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
+                        </div>
+                        <div class="details-box" id="details-${acc.id}">
+                            ${(acc.quests || []).map(q => `
+                                <div class="quest-item">
+                                    <span>${q.name || q.id}</span>
+                                    <span class="quest-${q.status.toLowerCase()}">${q.status}</span>
+                                </div>
+                            `).join('') || '<div style="color:#666;">ما في مهام مسجلة</div>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function addAccount() {
+            const token = document.getElementById('tokenInput').value;
+            const name = document.getElementById('nameInput').value;
+            if (!token) return alert('الصق التوكن أول');
+
+            const res = await fetch('/api/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, name }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('tokenInput').value = '';
+                document.getElementById('nameInput').value = '';
+                loadAccounts();
+            } else {
+                alert(data.error);
+            }
+        }
+
+        async function deleteAccount(id) {
+            if (!confirm('متأكد تحذف الحساب؟')) return;
+            await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+            loadAccounts();
+        }
+
+        async function startAccount(id) {
+            await fetch(`/api/accounts/${id}/start`, { method: 'POST' });
+            loadAccounts();
+        }
+
+        async function stopAccount(id) {
+            await fetch(`/api/accounts/${id}/stop`, { method: 'POST' });
+            loadAccounts();
+        }
+
+        function toggleDetails(id) {
+            const el = document.getElementById(`details-${id}`);
+            el.classList.toggle('show');
+        }
+
+        // تشغيل عند التحميل
+        checkAuth();
+    </script>
+</body>
+</html>
