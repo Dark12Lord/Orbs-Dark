@@ -1,438 +1,69 @@
-// quests.js - محرك المهام المباشر (Enroll + Heartbeat + Video Progress)
-const axios = require("axios");
-const crypto = require("crypto");
-const config = require("./config");
+// quests.js - محرك المهام باستخدام مكتبة discord-quests
+const { DiscordQuests } = require('discord-quests');
+const config = require('./config');
 
-const DISCORD_API = "https://discord.com/api/v9";
-
-// ===== الترويسات الأمنية =====
-function generateRandomHex(length = 32) {
-  return crypto.randomBytes(length).toString("hex");
-}
-
-function generateLaunchSignature() {
-  const buildNumber = 345678;
-  const clientLaunchId = generateRandomHex(16);
-  return `${clientLaunchId}.${buildNumber}.${generateRandomHex(8)}`;
-}
-
-function buildSuperProperties() {
-  const data = {
-    os: "Windows",
-    browser: "Discord Client",
-    release_channel: "stable",
-    client_version: "1.0.9174",
-    os_version: "10.0.19045",
-    os_arch: "x64",
-    system_locale: "en-US",
-    client_launch_id: generateRandomHex(32),
-    launch_signature: generateLaunchSignature(),
-    client_heartbeat_session_id: generateRandomHex(16),
-    x_installation_id: generateRandomHex(16),
-  };
-  return Buffer.from(JSON.stringify(data)).toString("base64");
-}
-
-function buildHeaders(token) {
-  return {
-    Authorization: token,
-    "Content-Type": "application/json",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9174 Chrome/120.0.0.0 Electron/28.0.0 Safari/537.36",
-    "X-Super-Properties": buildSuperProperties(),
-    "X-Discord-Locale": "en-US",
-    "X-Discord-Timezone": "Asia/Riyadh",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://discord.com/quest-home",
-  };
-}
-
-function jitter(minMs, maxMs) {
-  const delay = Math.floor(Math.random() * (maxMs - minMs) + minMs);
-  return new Promise((resolve) => setTimeout(resolve, delay));
-}
-
-function log(tag, msg, data) {
-  const timestamp = new Date().toISOString();
-  if (data !== undefined) {
-    console.log(`[${timestamp}] [${tag}] ${msg}`, JSON.stringify(data).slice(0, 800));
-  } else {
-    console.log(`[${timestamp}] [${tag}] ${msg}`);
-  }
-}
-
-// ===== جلب المهام =====
-async function fetchQuests(token) {
-  log("fetchQuests", "🔄 جاري جلب المهام...");
-  
-  const res = await axios.get(`${DISCORD_API}/quests/@me`, {
-    headers: buildHeaders(token),
-    timeout: 15000,
-  });
-
-  const data = res.data;
-
-  if (data && !Array.isArray(data)) {
-    log("fetchQuests", `مفاتيح الرد: ${Object.keys(data).join(", ")}`);
-    if (data.quest_enrollment_blocked_until) {
-      log("fetchQuests", `⚠️ محظور من التسجيل حتى: ${data.quest_enrollment_blocked_until}`);
-    }
-    if (data.quest_access_suspended_until) {
-      log("fetchQuests", `⚠️ موقوف من الوصول حتى: ${data.quest_access_suspended_until}`);
-    }
-  }
-
-  let quests = [];
-  if (Array.isArray(data)) quests = data;
-  else if (data?.quests && Array.isArray(data.quests)) quests = data.quests;
-  else if (data?.data && Array.isArray(data.data)) quests = data.data;
-
-  log("fetchQuests", `✅ عدد المهام: ${quests.length}`);
-  return quests;
-}
-
-// ===== استخراج البيانات =====
-function getQuestStatus(quest) {
-  const s =
-    quest.user_status?.status ||
-    quest.userStatus?.status ||
-    quest.status ||
-    "UNKNOWN";
-  return String(s).toUpperCase();
-}
-
-function getQuestName(quest) {
-  return (
-    quest.config?.messages?.quest_name ||
-    quest.config?.messages?.questName ||
-    quest.name ||
-    quest.id ||
-    "quest"
-  );
-}
-
-function getQuestType(quest) {
-  const candidates = [
-    quest.config?.task_config?.task_type,
-    quest.config?.taskConfig?.taskType,
-    quest.config?.task_config?.taskType,
-    quest.config?.taskConfig?.task_type,
-    quest.task_config?.task_type,
-    quest.taskConfig?.taskType,
-    quest.type,
-    quest.task_type,
-    quest.taskType,
-  ];
-  for (const c of candidates) {
-    if (c && typeof c === "string") return c.toUpperCase();
-  }
-  // استنتاج من الحقول
-  const config = quest.config || {};
-  if (config.video_duration_ms || config.videoDurationMs) return "WATCH_VIDEO";
-  if (config.application && config.application.id) return "PLAY_ON_DESKTOP";
-  if (config.stream_duration_ms) return "STREAM_ON_DESKTOP";
-  if (config.activity) return "PLAY_ACTIVITY";
-  if (config.achievement) return "ACHIEVEMENT";
-  return "UNKNOWN";
-}
-
-function getQuestReward(quest) {
-  return (
-    quest.config?.rewards_config?.orb_reward ||
-    quest.config?.rewardsConfig?.orbReward ||
-    quest.config?.rewards?.orb ||
-    quest.reward ||
-    0
-  );
-}
-
-function getApplicationId(quest) {
-  return (
-    quest.config?.application?.id ||
-    quest.config?.application_id ||
-    quest.application_id ||
-    null
-  );
-}
-
-function getDuration(quest) {
-  return (
-    quest.config?.task_config?.duration ||
-    quest.config?.taskConfig?.durationMs ||
-    quest.config?.task_config?.video_duration_ms ||
-    quest.config?.video_duration_ms ||
-    quest.config?.videoDurationMs ||
-    900000
-  );
-}
-
-// ===== ⭐ التسجيل في المهمة (Enroll) =====
-async function enrollQuest(token, questId) {
-  log("enroll", `📝 تسجيل ${questId}...`);
-  try {
-    const res = await axios.post(
-      `${DISCORD_API}/quests/${questId}/enroll`,
-      {},
-      { headers: buildHeaders(token), timeout: 15000 }
-    );
-    log("enroll", `✅ تم التسجيل [${res.status}]`);
-    return true;
-  } catch (err) {
-    const status = err.response?.status;
-    const msg = err.response?.data?.message || err.message;
-    // 400 = مسجل مسبقاً، مو مشكلة
-    if (status === 400) {
-      log("enroll", `⚠️ مسجل مسبقاً`);
-      return true;
-    }
-    log("enroll", `❌ فشل [${status}]: ${msg}`);
-    throw new Error(`enroll failed [${status}]: ${msg}`);
-  }
-}
-
-// ===== حل مهمة فيديو =====
-async function solveVideoQuest(token, quest, onUpdate) {
-  const questId = quest.id;
-  const questName = getQuestName(quest);
-  const durationMs = getDuration(quest);
-  const speedMultiplier = 2.0;
-  const intervalMs = 30000;
-  const effectiveInterval = intervalMs / speedMultiplier;
-  const totalSteps = Math.ceil(durationMs / (intervalMs * speedMultiplier));
-
-  log("video", `🎬 ${questName} - مدة: ${durationMs}ms, خطوات: ${totalSteps}`);
-
-  // 1. التسجيل في المهمة
-  await enrollQuest(token, questId);
-
-  // 2. إرسال التقدم
-  let successCount = 0;
-  let failCount = 0;
-
-  for (let step = 1; step <= totalSteps; step++) {
-    if (global.stopFlags && global.stopFlags.has(questId)) {
-      throw new Error("تم الإيقاف يدوياً");
-    }
-
-    const baseTimestamp = Math.min(step * intervalMs * speedMultiplier, durationMs);
-    const timestamp = Math.floor(baseTimestamp + Math.random() * 500);
-
-    try {
-      const res = await axios.post(
-        `${DISCORD_API}/quests/${questId}/video-progress`,
-        { timestamp },
-        { headers: buildHeaders(token), timeout: 15000 }
-      );
-      successCount++;
-      if (step === 1 || step === totalSteps || step % 5 === 0) {
-        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-        log("video", `▶️ ${step}/${totalSteps} (${percent}%) [${res.status}]`);
-      }
-    } catch (err) {
-      const status = err.response?.status;
-      const msg = err.response?.data?.message || err.message;
-      if (status === 429) {
-        const retryAfter = (err.response.data?.retry_after || 5) * 1000;
-        log("video", `⏸️ Rate limit: ${retryAfter}ms`);
-        await new Promise((r) => setTimeout(r, retryAfter));
-        continue;
-      }
-      failCount++;
-      log("video", `❌ خطوة ${step} [${status}]: ${msg}`);
-      if (failCount >= 3) throw new Error(`video failed [${status}]: ${msg}`);
-      await new Promise((r) => setTimeout(r, 5000));
-      continue;
-    }
-
-    if (onUpdate) {
-      const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-      onUpdate({ questId, questName, status: "running", percent });
-    }
-
-    await new Promise((r) => setTimeout(r, effectiveInterval + Math.random() * 3000));
-  }
-
-  log("video", `✅ اكتملت ${questId} - نجح: ${successCount}, فشل: ${failCount}`);
-  return true;
-}
-
-// ===== حل مهمة لعب =====
-async function solveGameQuest(token, quest, onUpdate) {
-  const questId = quest.id;
-  const questName = getQuestName(quest);
-  const applicationId = getApplicationId(quest);
-  const durationMs = getDuration(quest);
-  const intervalMs = 60000;
-
-  if (!applicationId) {
-    throw new Error("application_id غير موجود");
-  }
-
-  log("game", `🎮 ${questName} - app: ${applicationId}, مدة: ${durationMs}ms`);
-
-  // 1. التسجيل في المهمة
-  await enrollQuest(token, questId);
-
-  // 2. إرسال النبضات
-  const totalSteps = Math.ceil(durationMs / intervalMs);
-  let successCount = 0;
-  let failCount = 0;
-
-  for (let step = 1; step <= totalSteps; step++) {
-    if (global.stopFlags && global.stopFlags.has(questId)) {
-      throw new Error("تم الإيقاف يدوياً");
-    }
-
-    try {
-      const res = await axios.post(
-        `${DISCORD_API}/quests/${questId}/heartbeat`,
-        { application_id: applicationId, terminal: false },
-        { headers: buildHeaders(token), timeout: 15000 }
-      );
-      successCount++;
-      if (step === 1 || step === totalSteps || step % 3 === 0) {
-        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-        log("game", `💓 ${step}/${totalSteps} (${percent}%) [${res.status}]`);
-      }
-    } catch (err) {
-      const status = err.response?.status;
-      const msg = err.response?.data?.message || err.message;
-      if (status === 429) {
-        const retryAfter = (err.response.data?.retry_after || 5) * 1000;
-        log("game", `⏸️ Rate limit: ${retryAfter}ms`);
-        await new Promise((r) => setTimeout(r, retryAfter));
-        continue;
-      }
-      failCount++;
-      log("game", `❌ نبضة ${step} [${status}]: ${msg}`);
-      if (failCount >= 3) throw new Error(`heartbeat failed [${status}]: ${msg}`);
-      await new Promise((r) => setTimeout(r, 5000));
-      continue;
-    }
-
-    if (onUpdate) {
-      const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
-      onUpdate({ questId, questName, status: "running", percent });
-    }
-
-    await new Promise((r) => setTimeout(r, intervalMs + Math.random() * 7000));
-  }
-
-  log("game", `✅ اكتملت ${questId} - نجح: ${successCount}, فشل: ${failCount}`);
-  return true;
-}
-
-// ===== المحرك الرئيسي =====
+/**
+ * حل جميع المهام المتاحة لحساب معين باستخدام المكتبة.
+ * @param {string} token - توكن الحساب.
+ * @param {function} onUpdate - دالة يتم استدعاؤها عند تحديث حالة المهمة.
+ * @returns {Promise<object>} - كائن يحتوي على نتائج المهام.
+ */
 async function solveSequentially(token, onUpdate) {
-  const results = [];
-  const startTime = Date.now();
+    try {
+        console.log('[quests] 🚀 بدء جلسة حل المهام باستخدام مكتبة discord-quests...');
 
-  log("main", "🚀 بدء الجلسة");
+        // 1. إنشاء نسخة من المكتبة مع التوكن
+        const dq = new DiscordQuests(token);
 
-  try {
-    const quests = await fetchQuests(token);
-    if (!Array.isArray(quests)) {
-      return { success: false, error: "fetchQuests لم يُرجع مصفوفة" };
-    }
-    if (quests.length === 0) {
-      return { success: true, quests: [], message: "لا توجد مهام" };
-    }
-
-    const pending = quests.filter((q) => {
-      const status = getQuestStatus(q);
-      return status !== "COMPLETED" && status !== "CLAIMED" && status !== "REJECTED";
-    });
-
-    const alreadyDone = quests
-      .filter((q) => {
-        const status = getQuestStatus(q);
-        return status === "COMPLETED" || status === "CLAIMED" || status === "REJECTED";
-      })
-      .map((q) => ({
-        id: q.id,
-        name: getQuestName(q),
-        type: getQuestType(q),
-        status: getQuestStatus(q),
-        reward: getQuestReward(q),
-      }));
-
-    log("main", `📊 معلقة: ${pending.length} | مكتملة: ${alreadyDone.length}`);
-
-    const typeCounts = {};
-    for (const q of pending) {
-      const t = getQuestType(q);
-      typeCounts[t] = (typeCounts[t] || 0) + 1;
-    }
-    log("main", `📈 الأنواع:`, typeCounts);
-
-    if (pending.length === 0) {
-      return { success: true, quests: alreadyDone, message: "كل المهام مكتملة" };
-    }
-
-    for (let i = 0; i < pending.length; i++) {
-      const quest = pending[i];
-      const questId = quest.id;
-      const questName = getQuestName(quest);
-      const questType = getQuestType(quest);
-
-      log("main", `[${i + 1}/${pending.length}] ▶️ ${questName} (${questType})`);
-
-      try {
-        if (onUpdate) {
-          onUpdate({ questId, questName, status: "running", percent: 0 });
-        }
-
-        if (questType === "WATCH_VIDEO" || questType === "WATCH_VIDEO_ON_MOBILE") {
-          await solveVideoQuest(token, quest, onUpdate);
-        } else if (questType === "PLAY_ON_DESKTOP" || questType === "PLAY_ACTIVITY") {
-          await solveGameQuest(token, quest, onUpdate);
-        } else {
-          log("main", `⏭️ نوع غير مدعوم: ${questType}`);
-          throw new Error(`نوع غير مدعوم: ${questType}`);
-        }
-
-        results.push({
-          id: questId,
-          name: questName,
-          type: questType,
-          status: "COMPLETED",
-          reward: getQuestReward(quest),
+        // 2. استدعاء دالة solveAll التي تتولى كل شيء
+        //    (جلب المهام، التسجيل، الحل، معالجة الأخطاء)
+        const results = await dq.solveAll({
+            onProgress: ({ taskId, percent }) => {
+                // هذه الدالة تُستدعى أثناء تقدم المهمة
+                if (onUpdate) {
+                    onUpdate({
+                        questId: taskId,
+                        questName: `مهمة ${taskId}`, // يمكننا محاولة جلب الاسم لاحقاً
+                        status: 'running',
+                        percent: percent,
+                    });
+                }
+            },
+            onCompleted: (questId) => {
+                // هذه الدالة تُستدعى عند اكتمال المهمة
+                if (onUpdate) {
+                    onUpdate({
+                        questId: questId,
+                        questName: `مهمة ${questId}`,
+                        status: 'completed',
+                        percent: 100,
+                    });
+                }
+                console.log(`[quests] ✅ اكتملت المهمة: ${questId}`);
+            },
+            onError: (questId, err) => {
+                // هذه الدالة تُستدعى عند فشل مهمة
+                if (onUpdate) {
+                    onUpdate({
+                        questId: questId,
+                        questName: `مهمة ${questId}`,
+                        status: 'rejected',
+                        error: err.message,
+                    });
+                }
+                console.error(`[quests] ❌ فشلت المهمة ${questId}:`, err.message);
+            },
         });
 
-        log("main", `✅ ${questName}`);
+        console.log('[quests] 🏁 انتهت الجلسة. النتائج:', JSON.stringify(results, null, 2));
 
-        if (onUpdate) {
-          onUpdate({ questId, questName, status: "completed", percent: 100 });
-        }
+        // إعادة النتائج بتنسيق يفهمه bot.js
+        return { success: true, quests: results };
 
-        await jitter(5000, 15000);
-      } catch (err) {
-        results.push({
-          id: questId,
-          name: questName,
-          type: questType,
-          status: "REJECTED",
-          reward: 0,
-          error: err.message,
-        });
-        log("main", `❌ ${questName} - ${err.message}`);
-        if (onUpdate) {
-          onUpdate({ questId, questName, status: "rejected", error: err.message });
-        }
-      }
+    } catch (err) {
+        console.error('[quests] ❌ خطأ عام في solveSequentially:', err.message);
+        return { success: false, error: err.message };
     }
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const succeeded = results.filter((r) => r.status === "COMPLETED").length;
-    const failed = results.filter((r) => r.status === "REJECTED").length;
-
-    log("main", `🏁 نجح: ${succeeded}, فشل: ${failed}, الوقت: ${elapsed}s`);
-
-    return { success: true, quests: [...alreadyDone, ...results] };
-  } catch (err) {
-    log("main", `❌ خطأ عام: ${err.message}`);
-    return { success: false, error: err.message };
-  }
 }
 
 module.exports = { solveSequentially };
