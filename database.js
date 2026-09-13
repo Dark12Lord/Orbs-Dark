@@ -5,7 +5,6 @@ const config = require("./config");
 
 let supabase = null;
 
-// ===== تهيئة Supabase =====
 function initSupabase() {
     if (supabase !== null) return supabase;
     
@@ -13,7 +12,7 @@ function initSupabase() {
     const key = process.env.SUPABASE_KEY;
     
     if (!url || !key) {
-        console.log('[db] ⚠️ Supabase غير مهيأ: SUPABASE_URL أو SUPABASE_KEY مفقود');
+        console.log('[db] ⚠️ Supabase غير مهيأ');
         supabase = false;
         return false;
     }
@@ -21,7 +20,7 @@ function initSupabase() {
     try {
         const { createClient } = require('@supabase/supabase-js');
         supabase = createClient(url, key);
-        console.log('[db] ✅ Supabase متصل بنجاح');
+        console.log('[db] ✅ Supabase متصل');
         return supabase;
     } catch (err) {
         console.error('[db] ❌ فشل تهيئة Supabase:', err.message);
@@ -30,30 +29,24 @@ function initSupabase() {
     }
 }
 
-// ✅ دالة مساعدة لإعادة المحاولة عند فشل الاتصال بـ Supabase
 async function supabaseWithRetry(operation, maxRetries = 3, operationName = 'unknown') {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const result = await operation();
-            // لو النتيجة فيها error، نتحقق منه
             if (result && result.error) {
-                // لو خطأ Gateway Timeout أو شبكة، نعيد المحاولة
                 const errMsg = result.error.message || '';
-                if (errMsg.includes('Timeout') || errMsg.includes('timeout') || errMsg.includes('fetch')) {
-                    if (attempt < maxRetries) {
-                        const waitTime = 1000 * attempt;
-                        console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت (${errMsg})، إعادة بعد ${waitTime}ms`);
-                        await new Promise(r => setTimeout(r, waitTime));
-                        continue;
-                    }
+                if ((errMsg.includes('Timeout') || errMsg.includes('timeout') || errMsg.includes('fetch')) && attempt < maxRetries) {
+                    const waitTime = 1000 * attempt;
+                    console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت، إعادة بعد ${waitTime}ms`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    continue;
                 }
             }
             return result;
         } catch (err) {
-            const errMsg = err.message || '';
             if (attempt < maxRetries) {
                 const waitTime = 1000 * attempt;
-                console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت (${errMsg})، إعادة بعد ${waitTime}ms`);
+                console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت، إعادة بعد ${waitTime}ms`);
                 await new Promise(r => setTimeout(r, waitTime));
                 continue;
             }
@@ -62,7 +55,6 @@ async function supabaseWithRetry(operation, maxRetries = 3, operationName = 'unk
     }
 }
 
-// ===== التشفير =====
 const ALGORITHM = "aes-256-cbc";
 
 function getKey() {
@@ -87,13 +79,11 @@ function decrypt(encryptedText) {
     return decrypted;
 }
 
-// ===== JSON Fallback =====
 function loadJSON() {
     if (!fs.existsSync(config.dataFile)) return { accounts: [] };
     try {
         return JSON.parse(fs.readFileSync(config.dataFile, "utf8"));
     } catch (err) {
-        console.error("Error reading JSON:", err.message);
         return { accounts: [] };
     }
 }
@@ -102,7 +92,6 @@ function saveJSON(data) {
     fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8");
 }
 
-// ===== جلب اسم المستخدم من التوكن =====
 async function fetchUsername(token) {
     try {
         const res = await axios.get("https://discord.com/api/v9/users/@me", {
@@ -114,12 +103,10 @@ async function fetchUsername(token) {
         });
         return res.data.username || res.data.global_name || null;
     } catch (err) {
-        console.error("Failed to fetch username:", err.message);
         return null;
     }
 }
 
-// ===== إضافة حساب =====
 async function addAccount(token, name) {
     const id = crypto.randomBytes(4).toString("hex");
     
@@ -141,20 +128,43 @@ async function addAccount(token, name) {
 
     const sb = initSupabase();
     if (sb) {
-        console.log('[db] 🔍 جرب الحفظ في Supabase...');
+        // ✅ فحص إذا الحساب موجود مسبقاً (نفس التوكن)
+        const existing = await supabaseWithRetry(
+            async () => await sb.from('accounts').select('id, name'),
+            3,
+            'checkExisting'
+        );
+        
+        if (existing.data) {
+            for (const acc of existing.data) {
+                const accData = await supabaseWithRetry(
+                    async () => await sb.from('accounts').select('token').eq('id', acc.id).single(),
+                    3,
+                    'checkToken'
+                );
+                if (accData.data && decrypt(accData.data.token) === token) {
+                    console.log(`[db] ⚠️ الحساب موجود مسبقاً: ${acc.name}`);
+                    return { id: acc.id, name: acc.name, existing: true };
+                }
+            }
+        }
+        
         const { error } = await supabaseWithRetry(
             async () => await sb.from('accounts').insert(account),
             3,
             'addAccount'
         );
-        if (error) {
-            console.error('[db] ❌ فشل الحفظ:', error.message);
-            throw new Error('Supabase insert failed: ' + error.message);
-        }
-        console.log(`[db] ✅ حساب ${finalName} محفوظ في Supabase`);
+        if (error) throw new Error('Supabase insert failed: ' + error.message);
+        console.log(`[db] ✅ حساب ${finalName} محفوظ`);
     } else {
-        console.log('[db] ⚠️ استخدام الحفظ المحلي (JSON)');
         const data = loadJSON();
+        // فحص مكرر
+        for (const acc of data.accounts) {
+            if (decrypt(acc.token) === token) {
+                console.log(`[db] ⚠️ الحساب موجود مسبقاً`);
+                return { id: acc.id, name: acc.name, existing: true };
+            }
+        }
         data.accounts.push(account);
         saveJSON(data);
     }
@@ -162,16 +172,14 @@ async function addAccount(token, name) {
     return { id, name: finalName };
 }
 
-// ===== حذف حساب =====
 async function removeAccount(id) {
     const sb = initSupabase();
     if (sb) {
-        const { error } = await supabaseWithRetry(
+        await supabaseWithRetry(
             async () => await sb.from('accounts').delete().eq('id', id),
             3,
             'removeAccount'
         );
-        if (error) console.error('[db] فشل الحذف:', error.message);
     } else {
         const data = loadJSON();
         data.accounts = data.accounts.filter(a => a.id !== id);
@@ -179,21 +187,22 @@ async function removeAccount(id) {
     }
 }
 
-// ===== جلب حساب واحد =====
+// ✅ إصلاح: استخدام maybeSingle بدل single
 async function getAccount(id) {
     const sb = initSupabase();
     let account;
     
     if (sb) {
         const { data, error } = await supabaseWithRetry(
-            async () => await sb.from('accounts').select('*').eq('id', id).single(),
+            async () => await sb.from('accounts').select('*').eq('id', id).maybeSingle(),
             3,
             'getAccount'
         );
-        if (error || !data) {
-            if (error) console.error('[db] getAccount failed:', error.message);
+        if (error) {
+            console.error('[db] getAccount error:', error.message);
             return null;
         }
+        if (!data) return null;
         account = data;
     } else {
         const data = loadJSON();
@@ -207,7 +216,6 @@ async function getAccount(id) {
     };
 }
 
-// ===== جلب كل الحسابات =====
 async function getAllAccounts() {
     const sb = initSupabase();
     let accounts;
@@ -219,7 +227,7 @@ async function getAllAccounts() {
             'getAllAccounts'
         );
         if (error) {
-            console.error('[db] Supabase select failed:', error.message);
+            console.error('[db] getAllAccounts error:', error.message);
             return [];
         }
         accounts = data || [];
@@ -236,7 +244,6 @@ async function getAllAccounts() {
     }));
 }
 
-// ===== تحديث حساب =====
 async function updateAccount(id, updates) {
     const dbUpdates = { ...updates };
     if (updates.lastRun !== undefined) {
@@ -251,11 +258,7 @@ async function updateAccount(id, updates) {
             3,
             'updateAccount'
         );
-        if (error) {
-            console.error('[db] updateAccount failed:', error.message);
-            return false;
-        }
-        return true;
+        return !error;
     } else {
         const data = loadJSON();
         const index = data.accounts.findIndex(a => a.id === id);
@@ -266,7 +269,6 @@ async function updateAccount(id, updates) {
     }
 }
 
-// ===== تحديث المهام =====
 async function updateQuests(id, quests) {
     return updateAccount(id, {
         quests: quests,

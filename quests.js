@@ -1,4 +1,4 @@
-// quests.js - محرك المهام المُصلح (djs-selfbot-v13)
+// quests.js - محرك المهام (djs-selfbot-v13)
 const { Client } = require('djs-selfbot-v13');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -51,7 +51,22 @@ function getVideoDuration(quest) {
            900000;
 }
 
-// ✅ جلب التقدم الحقيقي من ديسكورد
+// ✅ التحقق إذا المهمة مكتملة أو مستلمة مسبقاً
+function isQuestDone(quest) {
+    const userStatus = quest.userStatus || quest.user_status;
+    if (!userStatus) return false;
+    
+    // مكتملة
+    if (userStatus.completed_at) return true;
+    // مستلمة (الـ Orbs مأخوذة)
+    if (userStatus.claimed_at) return true;
+    // أخذ الجائزة
+    if (userStatus.orb_quantity_claimed) return true;
+    
+    return false;
+}
+
+// ✅ جلب التقدم الحقيقي
 async function getRealProgress(client, questId) {
     try {
         const quest = client.quests.find(q => q.id === questId);
@@ -61,14 +76,13 @@ async function getRealProgress(client, questId) {
         if (!userStatus) return { percent: 0, completed: false };
         
         const progress = userStatus.progress || {};
-        const completed = userStatus.completed_at !== null && userStatus.completed_at !== undefined;
+        const completed = !!userStatus.completed_at;
         
         const taskConfig = getTaskConfig(quest);
         if (!taskConfig?.tasks) return { percent: 0, completed };
         
         const tasks = taskConfig.tasks;
         
-        // لمهام الفيديو
         if (tasks.WATCH_VIDEO || tasks.WATCH_VIDEO_ON_MOBILE) {
             const durationMs = getVideoDuration(quest);
             const watchedMs = progress.video_progress_ms || 0;
@@ -78,7 +92,6 @@ async function getRealProgress(client, questId) {
             };
         }
         
-        // لمهام اللعب (Desktop فقط، مو Activity)
         if (tasks.PLAY_ON_DESKTOP) {
             const durationMs = tasks.PLAY_ON_DESKTOP?.duration_ms || 900000;
             const playedMs = progress.activity_progress_ms || 0;
@@ -94,16 +107,15 @@ async function getRealProgress(client, questId) {
     }
 }
 
-// ✅ معالجة مهام الفيديو مع التتبع الحقيقي
+// ===== حل مهمة فيديو =====
 async function solveVideoQuest(client, quest, onUpdate) {
     const questId = quest.id;
     const questName = getQuestName(quest);
     const durationMs = getVideoDuration(quest);
-    const intervalMs = 30000; // 30 ثانية (الافتراضي في ديسكورد)[reference:3]
+    const intervalMs = 30000;
     
     console.log(`   🎬 مدة: ${Math.round(durationMs / 1000)} ثانية`);
     
-    // قبول المهمة أولاً
     try {
         await client.quests.acceptQuest(questId);
         console.log(`   ✅ تم القبول`);
@@ -111,53 +123,46 @@ async function solveVideoQuest(client, quest, onUpdate) {
         console.log(`   ⚠️ القبول: ${e.message}`);
     }
     
-    const startTime = Date.now();
     const totalSteps = Math.ceil(durationMs / intervalMs);
     
     for (let step = 1; step <= totalSteps; step++) {
-        // إرسال timestamp متزايد (يتوافق مع الوقت الحقيقي)
         const timestamp = Math.min(step * intervalMs, durationMs);
         await client.quests.videoProgress(questId, timestamp);
         
-        // ✅ جلب التقدم الحقيقي من ديسكورد
-        await client.quests.get(); // تحديث البيانات
+        await client.quests.get();
         const { percent, completed } = await getRealProgress(client, questId);
         
         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
         if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
         
         if (completed) {
-            console.log(`\n   ✅ اكتملت فعلياً (completed_at مُعيّن)`);
+            console.log(`\n   ✅ اكتملت فعلياً`);
             return true;
         }
         
-        // انتظار 30 ثانية (يتوافق مع المدة الحقيقية)
         await sleep(intervalMs);
     }
     
-    // التحقق النهائي
     await sleep(2000);
     await client.quests.get();
     const finalCheck = await getRealProgress(client, questId);
     
-    if (finalCheck.completed) {
-        return true;
-    }
+    if (finalCheck.completed) return true;
     
-    throw new Error(`لم تكتمل بعد ${Math.round(durationMs / 1000)} ثانية (completed_at = null)`);
+    throw new Error(`لم تكتمل بعد ${Math.round(durationMs / 1000)} ثانية`);
 }
 
-// ✅ معالجة مهام اللعب (Desktop فقط)
+// ===== حل مهمة لعب =====
 async function solveGameQuest(client, quest, onUpdate) {
     const questId = quest.id;
     const questName = getQuestName(quest);
     const appId = getApplicationId(quest);
-    const durationMs = 900000; // 15 دقيقة افتراضي
-    const intervalMs = 60000; // 60 ثانية (الافتراضي في ديسكورد)[reference:4]
+    const durationMs = 900000;
+    const intervalMs = 60000;
     
     if (!appId) throw new Error('application_id غير موجود');
     
-    console.log(`   🎮 App: ${appId} | مدة: 15 دقيقة`);
+    console.log(`   🎮 App: ${appId}`);
     
     try {
         await client.quests.acceptQuest(questId);
@@ -191,10 +196,10 @@ async function solveGameQuest(client, quest, onUpdate) {
     
     if (finalCheck.completed) return true;
     
-    throw new Error(`لم تكتمل المهمة فعلياً`);
+    throw new Error(`لم تكتمل المهمة`);
 }
 
-// ✅ المحرك الرئيسي
+// ===== المحرك الرئيسي =====
 async function solveSequentially(token, onUpdate) {
     const results = [];
     console.log('\n' + '='.repeat(50));
@@ -208,14 +213,24 @@ async function solveSequentially(token, onUpdate) {
         console.log(`✅ تم تسجيل الدخول كـ ${client.user.username}\n`);
 
         await client.quests.get();
-        const validQuests = client.quests.filterQuestsValid();
-        console.log(`📊 عدد المهام الصالحة: ${validQuests.length}\n`);
+        
+        // ✅ فلترة إضافية: تخطي المهام المكتملة والمستلمة
+        const libraryValid = client.quests.filterQuestsValid();
+        const validQuests = libraryValid.filter(q => {
+            if (isQuestDone(q)) {
+                console.log(`   ⏭️ تخطي (مكتملة/مستلمة): ${getQuestName(q)}`);
+                return false;
+            }
+            return true;
+        });
+        
+        console.log(`\n📊 عدد المهام الصالحة: ${validQuests.length}\n`);
 
         if (validQuests.length === 0) {
+            console.log('ℹ️ لا توجد مهام صالحة حالياً.');
             return { success: true, quests: [] };
         }
 
-        // عرض القائمة
         console.log('📋 قائمة المهام:');
         validQuests.forEach((q, i) => {
             console.log(`   ${i + 1}. ${getQuestName(q)} [${getQuestType(q)}]`);
@@ -234,9 +249,9 @@ async function solveSequentially(token, onUpdate) {
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                // ✅ تخطي المهام التي تحتاج تدخل يدوي
+                // تخطي المهام التي تحتاج تدخل يدوي
                 if (questType === 'PLAY_ACTIVITY' || questType === 'ACHIEVEMENT_IN_ACTIVITY') {
-                    throw new Error(`يحتاج تدخل يدوي (OAuth) - تم التخطي`);
+                    throw new Error(`يحتاج تدخل يدوي (OAuth) - تخطي`);
                 }
 
                 if (questType === 'WATCH_VIDEO' || questType === 'WATCH_VIDEO_ON_MOBILE') {
@@ -244,6 +259,13 @@ async function solveSequentially(token, onUpdate) {
                 } else if (questType === 'PLAY_ON_DESKTOP') {
                     await solveGameQuest(client, quest, onUpdate);
                 } else {
+                    // ✅ سجل بنية المهمة UNKNOWN للمساعدة في التصحيح
+                    if (!global._loggedUnknown) {
+                        global._loggedUnknown = true;
+                        console.log('\n🔍 بنية مهمة UNKNOWN:');
+                        console.log(JSON.stringify(getTaskConfig(quest), null, 2).slice(0, 2000));
+                        console.log('');
+                    }
                     throw new Error(`نوع غير مدعوم: ${questType}`);
                 }
 
@@ -251,10 +273,9 @@ async function solveSequentially(token, onUpdate) {
                 console.log(`\n   ✅ اكتملت: ${questName}`);
                 if (onUpdate) onUpdate({ questId, questName, status: 'completed', percent: 100 });
 
-                // ✅ تأخير بسيط عشوائي بين المهام (2-5 ثواني فقط)
+                // تأخير قصير بين المهام (2-5 ثواني فقط)
                 if (i < validQuests.length - 1) {
                     const delay = 2000 + Math.random() * 3000;
-                    console.log(`   ⏳ انتظار ${Math.round(delay / 1000)} ثانية...`);
                     await sleep(delay);
                 }
 
@@ -263,7 +284,6 @@ async function solveSequentially(token, onUpdate) {
                 results.push({ id: questId, name: questName, status: 'REJECTED', error: err.message });
                 if (onUpdate) onUpdate({ questId, questName, status: 'rejected', error: err.message });
                 
-                // تأخير قصير حتى بعد الفشل
                 await sleep(2000);
             }
         }
@@ -283,9 +303,47 @@ async function solveSequentially(token, onUpdate) {
     } finally {
         if (client && client.destroy) {
             client.destroy();
-            console.log('🔌 تم إغلاق الاتصال.');
         }
     }
 }
 
-module.exports = { solveSequentially };
+// ✅ دالة منفصلة لجلب المهام فقط (بدون حل) - للـ Refresh
+async function fetchQuestsOnly(token) {
+    const client = new Client();
+    try {
+        await client.login(token);
+        await client.quests.get();
+        
+        const libraryValid = client.quests.filterQuestsValid();
+        const allQuests = client.quests.map(q => {
+            const userStatus = q.userStatus || q.user_status;
+            return {
+                id: q.id,
+                name: getQuestName(q),
+                type: getQuestType(q),
+                status: userStatus?.completed_at ? 'COMPLETED' 
+                       : userStatus?.claimed_at ? 'CLAIMED'
+                       : 'PENDING',
+                completed: !!userStatus?.completed_at,
+                claimed: !!userStatus?.claimed_at,
+            };
+        });
+        
+        const valid = libraryValid.filter(q => !isQuestDone(q)).map(q => ({
+            id: q.id,
+            name: getQuestName(q),
+            type: getQuestType(q),
+            status: 'PENDING',
+            completed: false,
+            claimed: false,
+        }));
+        
+        return { success: true, allQuests, valid };
+    } catch (err) {
+        return { success: false, error: err.message };
+    } finally {
+        if (client && client.destroy) client.destroy();
+    }
+}
+
+module.exports = { solveSequentially, fetchQuestsOnly };

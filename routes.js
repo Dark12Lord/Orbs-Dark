@@ -3,6 +3,7 @@ const router = express.Router();
 const database = require("./database");
 const manager = require("./manager");
 const config = require("./config");
+const { fetchQuestsOnly } = require("./quests");
 
 function requireAuth(req, res, next) {
     if (req.session && req.session.authenticated) return next();
@@ -55,7 +56,7 @@ router.post("/api/accounts", requireAuth, async (req, res) => {
     }
     try {
         const result = await database.addAccount(token.trim(), name);
-        res.json({ success: true, id: result.id, name: result.name });
+        res.json({ success: true, id: result.id, name: result.name, existing: result.existing || false });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -82,6 +83,45 @@ router.get("/api/accounts/:id/quests", requireAuth, async (req, res) => {
             quests: account.quests || [],
         });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ✅ Endpoint جديد: Refresh المهام بدون حل
+router.post("/api/accounts/:id/refresh", requireAuth, async (req, res) => {
+    try {
+        const account = await database.getAccount(req.params.id);
+        if (!account) return res.status(404).json({ error: "الحساب غير موجود" });
+
+        console.log(`[refresh] 🔄 جلب مهام ${account.name}...`);
+        const result = await fetchQuestsOnly(account.token);
+        
+        if (!result.success) {
+            return res.status(500).json({ error: result.error });
+        }
+
+        // حفظ المهام في قاعدة البيانات
+        const questsForDb = result.allQuests.map(q => ({
+            id: q.id,
+            name: q.name,
+            type: q.type,
+            status: q.completed ? 'COMPLETED' : q.claimed ? 'CLAIMED' : 'PENDING',
+            percent: q.completed ? 100 : 0,
+            error: null,
+        }));
+
+        await database.updateQuests(req.params.id, questsForDb);
+        
+        console.log(`[refresh] ✅ ${account.name}: ${result.allQuests.length} مهمة (${result.valid.length} صالحة)`);
+        
+        res.json({
+            success: true,
+            total: result.allQuests.length,
+            valid: result.valid.length,
+            quests: questsForDb,
+        });
+    } catch (err) {
+        console.error('[refresh] خطأ:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
