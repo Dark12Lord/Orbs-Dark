@@ -4,54 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <title>Dark Orbs — لوحة التحكم</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
         body { background: #0d0d12; color: #e0e0e0; min-height: 100vh; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; }
 
-        .login-box {
-            background: #1a1a24; padding: 40px; border-radius: 16px;
-            max-width: 400px; margin: 100px auto; text-align: center;
-        }
+        .login-box { background: #1a1a24; padding: 40px; border-radius: 16px; max-width: 400px; margin: 100px auto; text-align: center; }
         .login-box h1 { color: #a78bfa; margin-bottom: 20px; font-size: 24px; }
-        .login-box input {
-            width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333;
-            background: #0d0d12; color: #fff; font-size: 16px; margin-bottom: 16px;
-        }
-        .login-box button {
-            width: 100%; padding: 14px; border-radius: 10px; border: none;
-            background: #7c3aed; color: #fff; font-size: 16px; cursor: pointer;
-        }
-        .login-box button:hover { background: #6d28d9; }
+        .login-box input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333; background: #0d0d12; color: #fff; font-size: 16px; margin-bottom: 16px; }
+        .login-box button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #7c3aed; color: #fff; font-size: 16px; cursor: pointer; }
 
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
         .header h1 { color: #a78bfa; font-size: 22px; }
-        .header button {
-            padding: 8px 16px; border-radius: 8px; border: 1px solid #555;
-            background: transparent; color: #e0e0e0; cursor: pointer; font-size: 14px;
-        }
+        .header button { padding: 8px 16px; border-radius: 8px; border: 1px solid #555; background: transparent; color: #e0e0e0; cursor: pointer; font-size: 14px; }
 
-        .add-box {
-            background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px;
-            display: flex; gap: 10px; flex-wrap: wrap;
-        }
-        .add-box input {
-            flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333;
-            background: #0d0d12; color: #fff; font-size: 14px;
-        }
-        .add-box input::placeholder { color: #666; }
-        .add-box button {
-            padding: 12px 24px; border-radius: 8px; border: none;
-            background: #7c3aed; color: #fff; cursor: pointer; font-size: 14px;
-        }
+        .add-box { background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .add-box input { flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #0d0d12; color: #fff; font-size: 14px; }
+        .add-box button { padding: 12px 24px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; cursor: pointer; font-size: 14px; }
 
-        .account-card {
-            background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px;
-            border-right: 4px solid #333;
-        }
+        .account-card { background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px; border-right: 4px solid #333; }
         .account-card.running { border-right-color: #22c55e; }
         .account-card.done { border-right-color: #a78bfa; }
         .account-card.error { border-right-color: #ef4444; }
@@ -65,22 +37,17 @@
         .account-status.error { background: #7f1d1d; color: #fca5a5; }
 
         .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .account-actions button {
-            padding: 6px 14px; border-radius: 6px; border: none;
-            font-size: 12px; cursor: pointer;
-        }
+        .account-actions button { padding: 6px 14px; border-radius: 6px; border: none; font-size: 12px; cursor: pointer; }
         .btn-start { background: #16a34a; color: #fff; }
         .btn-stop { background: #dc2626; color: #fff; }
+        .btn-refresh { background: #0ea5e9; color: #fff; }
         .btn-details { background: #333; color: #e0e0e0; }
         .btn-delete { background: #333; color: #ef4444; }
 
         .quest-stats { margin-top: 10px; font-size: 13px; color: #aaa; }
         .quest-stats span { margin-left: 12px; }
 
-        .details-box {
-            margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px;
-            display: none; font-size: 13px; max-height: 400px; overflow-y: auto;
-        }
+        .details-box { margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px; display: none; font-size: 13px; max-height: 400px; overflow-y: auto; }
         .details-box.show { display: block; }
 
         .quest-item { padding: 8px 0; border-bottom: 1px solid #1a1a24; }
@@ -88,40 +55,24 @@
         .quest-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .quest-name { flex: 1; font-size: 13px; }
         .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
-        .quest-status.completed { background: #166534; color: #86efac; }
+        .quest-status.completed, .quest-status.claimed { background: #166534; color: #86efac; }
         .quest-status.rejected { background: #7f1d1d; color: #fca5a5; }
         .quest-status.running { background: #713f12; color: #fde047; }
+        .quest-status.pending { background: #333; color: #aaa; }
 
-        .progress-bar {
-            width: 100%; height: 6px; background: #333; border-radius: 3px;
-            margin-top: 4px; overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa);
-            border-radius: 3px; transition: width 0.5s ease;
-        }
-        .progress-text {
-            font-size: 11px; color: #a78bfa; margin-top: 2px;
-        }
+        .progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; margin-top: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 3px; transition: width 0.5s ease; }
+        .progress-text { font-size: 11px; color: #a78bfa; margin-top: 2px; }
         .quest-error { color: #ef4444; font-size: 11px; margin-top: 4px; }
 
         .empty { text-align: center; padding: 40px; color: #666; }
-        .toast {
-            position: fixed; bottom: 20px; right: 20px; background: #1a1a24;
-            padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed;
-            display: none; z-index: 999; max-width: 300px;
-        }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #1a1a24; padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed; display: none; z-index: 999; max-width: 300px; }
         .toast.show { display: block; }
         .toast.error { border-right-color: #ef4444; }
+        .toast.success { border-right-color: #22c55e; }
 
-        .live-dot {
-            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-            background: #22c55e; margin-left: 6px; animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
+        .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-left: 6px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     </style>
 </head>
 <body>
@@ -155,24 +106,20 @@
         let accounts = [];
         let refreshInterval = null;
 
-        function showToast(msg, isError = false) {
+        function showToast(msg, type = 'info') {
             const t = document.getElementById('toast');
             t.textContent = msg;
-            t.className = 'toast show' + (isError ? ' error' : '');
+            t.className = 'toast show' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
             setTimeout(() => t.classList.remove('show'), 4000);
         }
 
-        // ✅ fetch مع منع الكاش
         async function noCacheFetch(url, options = {}) {
             const separator = url.includes('?') ? '&' : '?';
             const cacheBuster = url + separator + '_t=' + Date.now();
             return fetch(cacheBuster, {
                 ...options,
                 cache: 'no-store',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    ...(options.headers || {}),
-                },
+                headers: { 'Cache-Control': 'no-cache', ...(options.headers || {}) },
             });
         }
 
@@ -184,11 +131,8 @@
                 body: JSON.stringify({ password }),
             });
             const data = await res.json();
-            if (data.success) {
-                showDashboard();
-            } else {
-                document.getElementById('loginError').textContent = data.error;
-            }
+            if (data.success) showDashboard();
+            else document.getElementById('loginError').textContent = data.error;
         }
 
         async function logout() {
@@ -206,7 +150,6 @@
             document.getElementById('loginView').style.display = 'none';
             document.getElementById('dashboardView').style.display = 'block';
             loadAccounts();
-            // ✅ تحديث أسرع: كل 3 ثواني
             if (refreshInterval) clearInterval(refreshInterval);
             refreshInterval = setInterval(loadAccounts, 3000);
         }
@@ -230,12 +173,10 @@
 
             container.innerHTML = accounts.map(acc => {
                 const quests = acc.quests || [];
-                const completed = quests.filter(q => q.status === 'COMPLETED').length;
+                const completed = quests.filter(q => q.status === 'COMPLETED' || q.status === 'CLAIMED').length;
                 const rejected = quests.filter(q => q.status === 'REJECTED').length;
                 const running = quests.filter(q => q.status === 'running').length;
-                const pending = quests.filter(q =>
-                    q.status !== 'COMPLETED' && q.status !== 'REJECTED' && q.status !== 'running'
-                ).length;
+                const pending = quests.filter(q => q.status === 'PENDING' || q.status === 'IDLE').length;
 
                 const statusClass = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
                 const statusText = {
@@ -260,6 +201,7 @@
                         <div class="account-actions">
                             <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
                             <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
+                            <button class="btn-refresh" onclick="refreshAccount('${acc.id}')">🔄 تحديث</button>
                             <button class="btn-details" onclick="toggleDetails('${acc.id}')">📋 التفاصيل</button>
                             <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
                         </div>
@@ -278,7 +220,7 @@
                                     ` : ''}
                                     ${q.error ? `<div class="quest-error">⚠️ ${q.error}</div>` : ''}
                                 </div>
-                            `).join('') : '<div style="color:#666;">ما في مهام مسجلة</div>'}
+                            `).join('') : '<div style="color:#666;">ما في مهام مسجلة. اضغط "🔄 تحديث" عشان تجيب المهام.</div>'}
                         </div>
                     </div>
                 `;
@@ -288,7 +230,7 @@
         async function addAccount() {
             const token = document.getElementById('tokenInput').value.trim();
             const name = document.getElementById('nameInput').value.trim();
-            if (!token) return showToast('الصق التوكن أول', true);
+            if (!token) return showToast('الصق التوكن أول', 'error');
 
             showToast('جاري إضافة الحساب...');
             try {
@@ -301,13 +243,17 @@
                 if (data.success) {
                     document.getElementById('tokenInput').value = '';
                     document.getElementById('nameInput').value = '';
-                    showToast('تم إضافة: ' + data.name);
+                    if (data.existing) {
+                        showToast('⚠️ الحساب موجود مسبقاً: ' + data.name);
+                    } else {
+                        showToast('✅ تم إضافة: ' + data.name, 'success');
+                    }
                     loadAccounts();
                 } else {
-                    showToast('خطأ: ' + data.error, true);
+                    showToast('خطأ: ' + data.error, 'error');
                 }
             } catch (e) {
-                showToast('فشل الاتصال بالسيرفر', true);
+                showToast('فشل الاتصال بالسيرفر', 'error');
             }
         }
 
@@ -321,11 +267,10 @@
             showToast('جاري التشغيل...');
             try {
                 await noCacheFetch(`/api/accounts/${id}/start`, { method: 'POST' });
-                // تحديث سريع بعد البدء
                 setTimeout(loadAccounts, 1000);
                 setTimeout(loadAccounts, 3000);
             } catch (e) {
-                showToast('فشل التشغيل', true);
+                showToast('فشل التشغيل', 'error');
             }
         }
 
@@ -334,12 +279,28 @@
             loadAccounts();
         }
 
+        // ✅ زر التحديث الجديد
+        async function refreshAccount(id) {
+            showToast('🔄 جاري جلب المهام...');
+            try {
+                const res = await noCacheFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`✅ تم التحديث: ${data.total} مهمة (${data.valid} صالحة)`, 'success');
+                    loadAccounts();
+                } else {
+                    showToast('خطأ: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showToast('فشل التحديث', 'error');
+            }
+        }
+
         function toggleDetails(id) {
             const el = document.getElementById(`details-${id}`);
             el.classList.toggle('show');
         }
 
-        // ✅ تنظيف الفاصل عند مغادرة الصفحة
         window.addEventListener('beforeunload', () => {
             if (refreshInterval) clearInterval(refreshInterval);
         });
