@@ -5,6 +5,7 @@ const config = require("./config");
 
 let supabase = null;
 
+// ===== تهيئة Supabase =====
 function initSupabase() {
     if (supabase !== null) return supabase;
     
@@ -29,6 +30,39 @@ function initSupabase() {
     }
 }
 
+// ✅ دالة مساعدة لإعادة المحاولة عند فشل الاتصال بـ Supabase
+async function supabaseWithRetry(operation, maxRetries = 3, operationName = 'unknown') {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const result = await operation();
+            // لو النتيجة فيها error، نتحقق منه
+            if (result && result.error) {
+                // لو خطأ Gateway Timeout أو شبكة، نعيد المحاولة
+                const errMsg = result.error.message || '';
+                if (errMsg.includes('Timeout') || errMsg.includes('timeout') || errMsg.includes('fetch')) {
+                    if (attempt < maxRetries) {
+                        const waitTime = 1000 * attempt;
+                        console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت (${errMsg})، إعادة بعد ${waitTime}ms`);
+                        await new Promise(r => setTimeout(r, waitTime));
+                        continue;
+                    }
+                }
+            }
+            return result;
+        } catch (err) {
+            const errMsg = err.message || '';
+            if (attempt < maxRetries) {
+                const waitTime = 1000 * attempt;
+                console.log(`[db] ⚠️ ${operationName}: محاولة ${attempt} فشلت (${errMsg})، إعادة بعد ${waitTime}ms`);
+                await new Promise(r => setTimeout(r, waitTime));
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
+// ===== التشفير =====
 const ALGORITHM = "aes-256-cbc";
 
 function getKey() {
@@ -53,6 +87,7 @@ function decrypt(encryptedText) {
     return decrypted;
 }
 
+// ===== JSON Fallback =====
 function loadJSON() {
     if (!fs.existsSync(config.dataFile)) return { accounts: [] };
     try {
@@ -67,6 +102,7 @@ function saveJSON(data) {
     fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8");
 }
 
+// ===== جلب اسم المستخدم من التوكن =====
 async function fetchUsername(token) {
     try {
         const res = await axios.get("https://discord.com/api/v9/users/@me", {
@@ -83,6 +119,7 @@ async function fetchUsername(token) {
     }
 }
 
+// ===== إضافة حساب =====
 async function addAccount(token, name) {
     const id = crypto.randomBytes(4).toString("hex");
     
@@ -105,7 +142,11 @@ async function addAccount(token, name) {
     const sb = initSupabase();
     if (sb) {
         console.log('[db] 🔍 جرب الحفظ في Supabase...');
-        const { error } = await sb.from('accounts').insert(account);
+        const { error } = await supabaseWithRetry(
+            async () => await sb.from('accounts').insert(account),
+            3,
+            'addAccount'
+        );
         if (error) {
             console.error('[db] ❌ فشل الحفظ:', error.message);
             throw new Error('Supabase insert failed: ' + error.message);
@@ -121,10 +162,16 @@ async function addAccount(token, name) {
     return { id, name: finalName };
 }
 
+// ===== حذف حساب =====
 async function removeAccount(id) {
     const sb = initSupabase();
     if (sb) {
-        await sb.from('accounts').delete().eq('id', id);
+        const { error } = await supabaseWithRetry(
+            async () => await sb.from('accounts').delete().eq('id', id),
+            3,
+            'removeAccount'
+        );
+        if (error) console.error('[db] فشل الحذف:', error.message);
     } else {
         const data = loadJSON();
         data.accounts = data.accounts.filter(a => a.id !== id);
@@ -132,13 +179,21 @@ async function removeAccount(id) {
     }
 }
 
+// ===== جلب حساب واحد =====
 async function getAccount(id) {
     const sb = initSupabase();
     let account;
     
     if (sb) {
-        const { data, error } = await sb.from('accounts').select('*').eq('id', id).single();
-        if (error || !data) return null;
+        const { data, error } = await supabaseWithRetry(
+            async () => await sb.from('accounts').select('*').eq('id', id).single(),
+            3,
+            'getAccount'
+        );
+        if (error || !data) {
+            if (error) console.error('[db] getAccount failed:', error.message);
+            return null;
+        }
         account = data;
     } else {
         const data = loadJSON();
@@ -152,12 +207,17 @@ async function getAccount(id) {
     };
 }
 
+// ===== جلب كل الحسابات =====
 async function getAllAccounts() {
     const sb = initSupabase();
     let accounts;
     
     if (sb) {
-        const { data, error } = await sb.from('accounts').select('*').order('created_at', { ascending: true });
+        const { data, error } = await supabaseWithRetry(
+            async () => await sb.from('accounts').select('*').order('created_at', { ascending: true }),
+            3,
+            'getAllAccounts'
+        );
         if (error) {
             console.error('[db] Supabase select failed:', error.message);
             return [];
@@ -176,6 +236,7 @@ async function getAllAccounts() {
     }));
 }
 
+// ===== تحديث حساب =====
 async function updateAccount(id, updates) {
     const dbUpdates = { ...updates };
     if (updates.lastRun !== undefined) {
@@ -185,8 +246,16 @@ async function updateAccount(id, updates) {
     
     const sb = initSupabase();
     if (sb) {
-        const { error } = await sb.from('accounts').update(dbUpdates).eq('id', id);
-        return !error;
+        const { error } = await supabaseWithRetry(
+            async () => await sb.from('accounts').update(dbUpdates).eq('id', id),
+            3,
+            'updateAccount'
+        );
+        if (error) {
+            console.error('[db] updateAccount failed:', error.message);
+            return false;
+        }
+        return true;
     } else {
         const data = loadJSON();
         const index = data.accounts.findIndex(a => a.id === id);
@@ -197,6 +266,7 @@ async function updateAccount(id, updates) {
     }
 }
 
+// ===== تحديث المهام =====
 async function updateQuests(id, quests) {
     return updateAccount(id, {
         quests: quests,

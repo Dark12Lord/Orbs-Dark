@@ -1,13 +1,13 @@
-// quests.js - محرك المهام باستخدام djs-selfbot-v13 (نسخة مُحسَّنة)
+// quests.js - محرك المهام المُصلح (djs-selfbot-v13)
 const { Client } = require('djs-selfbot-v13');
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function renderProgressBar(percent, width = 20) {
     const filled = Math.round((percent / 100) * width);
     const empty = width - filled;
     return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percent}%`;
 }
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function getQuestName(quest) {
     return quest.config?.messages?.quest_name || quest.config?.messages?.questName || quest.id;
@@ -38,7 +38,6 @@ function getApplicationId(quest) {
     
     const tasks = taskConfig.tasks;
     return tasks.PLAY_ON_DESKTOP?.applications?.[0]?.id ||
-           tasks.PLAY_ACTIVITY?.applications?.[0]?.id ||
            quest.config?.application?.id || null;
 }
 
@@ -53,53 +52,149 @@ function getVideoDuration(quest) {
 }
 
 // ✅ جلب التقدم الحقيقي من ديسكورد
-async function getQuestProgress(client, questId) {
+async function getRealProgress(client, questId) {
     try {
         const quest = client.quests.find(q => q.id === questId);
-        if (!quest) return 0;
+        if (!quest) return { percent: 0, completed: false };
         
         const userStatus = quest.userStatus || quest.user_status;
-        const progress = userStatus?.progress || {};
+        if (!userStatus) return { percent: 0, completed: false };
+        
+        const progress = userStatus.progress || {};
+        const completed = userStatus.completed_at !== null && userStatus.completed_at !== undefined;
         
         const taskConfig = getTaskConfig(quest);
-        if (!taskConfig?.tasks) return 0;
+        if (!taskConfig?.tasks) return { percent: 0, completed };
         
         const tasks = taskConfig.tasks;
         
+        // لمهام الفيديو
         if (tasks.WATCH_VIDEO || tasks.WATCH_VIDEO_ON_MOBILE) {
             const durationMs = getVideoDuration(quest);
             const watchedMs = progress.video_progress_ms || 0;
-            return Math.min(Math.round((watchedMs / durationMs) * 100), 100);
+            return {
+                percent: Math.min(Math.round((watchedMs / durationMs) * 100), 100),
+                completed,
+            };
         }
         
-        if (tasks.PLAY_ON_DESKTOP || tasks.PLAY_ACTIVITY) {
-            const durationMs = tasks.PLAY_ON_DESKTOP?.duration_ms || 
-                             tasks.PLAY_ACTIVITY?.duration_ms || 900000;
+        // لمهام اللعب (Desktop فقط، مو Activity)
+        if (tasks.PLAY_ON_DESKTOP) {
+            const durationMs = tasks.PLAY_ON_DESKTOP?.duration_ms || 900000;
             const playedMs = progress.activity_progress_ms || 0;
-            return Math.min(Math.round((playedMs / durationMs) * 100), 100);
+            return {
+                percent: Math.min(Math.round((playedMs / durationMs) * 100), 100),
+                completed,
+            };
         }
         
-        return 0;
+        return { percent: 0, completed };
     } catch (err) {
-        console.error(`[progress] فشل جلب التقدم:`, err.message);
-        return 0;
+        return { percent: 0, completed: false };
     }
 }
 
-// ✅ التحقق من الاكتمال الحقيقي
-async function isQuestCompleted(client, questId) {
+// ✅ معالجة مهام الفيديو مع التتبع الحقيقي
+async function solveVideoQuest(client, quest, onUpdate) {
+    const questId = quest.id;
+    const questName = getQuestName(quest);
+    const durationMs = getVideoDuration(quest);
+    const intervalMs = 30000; // 30 ثانية (الافتراضي في ديسكورد)[reference:3]
+    
+    console.log(`   🎬 مدة: ${Math.round(durationMs / 1000)} ثانية`);
+    
+    // قبول المهمة أولاً
     try {
-        const quest = client.quests.find(q => q.id === questId);
-        if (!quest) return false;
-        
-        const userStatus = quest.userStatus || quest.user_status;
-        return userStatus?.completed_at !== null && userStatus?.completed_at !== undefined;
-    } catch (err) {
-        console.error(`[verify] فشل التحقق:`, err.message);
-        return false;
+        await client.quests.acceptQuest(questId);
+        console.log(`   ✅ تم القبول`);
+    } catch (e) {
+        console.log(`   ⚠️ القبول: ${e.message}`);
     }
+    
+    const startTime = Date.now();
+    const totalSteps = Math.ceil(durationMs / intervalMs);
+    
+    for (let step = 1; step <= totalSteps; step++) {
+        // إرسال timestamp متزايد (يتوافق مع الوقت الحقيقي)
+        const timestamp = Math.min(step * intervalMs, durationMs);
+        await client.quests.videoProgress(questId, timestamp);
+        
+        // ✅ جلب التقدم الحقيقي من ديسكورد
+        await client.quests.get(); // تحديث البيانات
+        const { percent, completed } = await getRealProgress(client, questId);
+        
+        process.stdout.write(`\r   ${renderProgressBar(percent)}`);
+        if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
+        
+        if (completed) {
+            console.log(`\n   ✅ اكتملت فعلياً (completed_at مُعيّن)`);
+            return true;
+        }
+        
+        // انتظار 30 ثانية (يتوافق مع المدة الحقيقية)
+        await sleep(intervalMs);
+    }
+    
+    // التحقق النهائي
+    await sleep(2000);
+    await client.quests.get();
+    const finalCheck = await getRealProgress(client, questId);
+    
+    if (finalCheck.completed) {
+        return true;
+    }
+    
+    throw new Error(`لم تكتمل بعد ${Math.round(durationMs / 1000)} ثانية (completed_at = null)`);
 }
 
+// ✅ معالجة مهام اللعب (Desktop فقط)
+async function solveGameQuest(client, quest, onUpdate) {
+    const questId = quest.id;
+    const questName = getQuestName(quest);
+    const appId = getApplicationId(quest);
+    const durationMs = 900000; // 15 دقيقة افتراضي
+    const intervalMs = 60000; // 60 ثانية (الافتراضي في ديسكورد)[reference:4]
+    
+    if (!appId) throw new Error('application_id غير موجود');
+    
+    console.log(`   🎮 App: ${appId} | مدة: 15 دقيقة`);
+    
+    try {
+        await client.quests.acceptQuest(questId);
+        console.log(`   ✅ تم القبول`);
+    } catch (e) {
+        console.log(`   ⚠️ القبول: ${e.message}`);
+    }
+    
+    const totalSteps = Math.ceil(durationMs / intervalMs);
+    
+    for (let step = 1; step <= totalSteps; step++) {
+        await client.quests.heartbeat(questId, appId);
+        
+        await client.quests.get();
+        const { percent, completed } = await getRealProgress(client, questId);
+        
+        process.stdout.write(`\r   ${renderProgressBar(percent)}`);
+        if (onUpdate) onUpdate({ questId, questName, status: 'running', percent });
+        
+        if (completed) {
+            console.log(`\n   ✅ اكتملت فعلياً`);
+            return true;
+        }
+        
+        await sleep(intervalMs);
+    }
+    
+    await sleep(2000);
+    await client.quests.get();
+    const finalCheck = await getRealProgress(client, questId);
+    
+    if (finalCheck.completed) return true;
+    
+    throw new Error(`لم تكتمل المهمة فعلياً`);
+}
+
+// ✅ المحرك الرئيسي
 async function solveSequentially(token, onUpdate) {
     const results = [];
     console.log('\n' + '='.repeat(50));
@@ -117,10 +212,10 @@ async function solveSequentially(token, onUpdate) {
         console.log(`📊 عدد المهام الصالحة: ${validQuests.length}\n`);
 
         if (validQuests.length === 0) {
-            console.log('ℹ️ لا توجد مهام صالحة حالياً.');
             return { success: true, quests: [] };
         }
 
+        // عرض القائمة
         console.log('📋 قائمة المهام:');
         validQuests.forEach((q, i) => {
             console.log(`   ${i + 1}. ${getQuestName(q)} [${getQuestType(q)}]`);
@@ -139,71 +234,26 @@ async function solveSequentially(token, onUpdate) {
             try {
                 if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: 0 });
 
-                // ✅ تخطي مهام النشاط التي تحتاج تدخل يدوي
+                // ✅ تخطي المهام التي تحتاج تدخل يدوي
                 if (questType === 'PLAY_ACTIVITY' || questType === 'ACHIEVEMENT_IN_ACTIVITY') {
-                    throw new Error(`نوع يحتاج تدخل يدوي: ${questType}`);
-                }
-
-                // محاولة accept
-                try {
-                    await client.quests.acceptQuest(questId);
-                    console.log(`   ✅ تم قبول المهمة`);
-                } catch (e) {
-                    console.log(`   ⚠️ القبول: ${e.message}`);
+                    throw new Error(`يحتاج تدخل يدوي (OAuth) - تم التخطي`);
                 }
 
                 if (questType === 'WATCH_VIDEO' || questType === 'WATCH_VIDEO_ON_MOBILE') {
-                    const durationMs = getVideoDuration(quest);
-                    const speedMultiplier = 3.0; // ✅ زد السرعة إلى 3x
-                    const intervalMs = 30000;
-                    const totalSteps = Math.ceil(durationMs / (intervalMs * speedMultiplier));
-                    
-                    for (let step = 1; step <= totalSteps; step++) {
-                        const timestamp = Math.min(step * intervalMs * speedMultiplier, durationMs);
-                        await client.quests.videoProgress(questId, timestamp);
-                        
-                        // ✅ جلب التقدم الحقيقي
-                        const realProgress = await getQuestProgress(client, questId);
-                        process.stdout.write(`\r   ${renderProgressBar(realProgress)}`);
-                        if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: realProgress });
-                        
-                        await sleep(intervalMs / speedMultiplier + Math.random() * 1000);
-                    }
+                    await solveVideoQuest(client, quest, onUpdate);
                 } else if (questType === 'PLAY_ON_DESKTOP') {
-                    const appId = getApplicationId(quest);
-                    if (!appId) throw new Error('application_id غير موجود');
-                    
-                    const durationMs = 900000;
-                    const intervalMs = 30000; // ✅ قلل إلى 30 ثانية
-                    const totalSteps = Math.ceil(durationMs / intervalMs);
-                    
-                    for (let step = 1; step <= totalSteps; step++) {
-                        await client.quests.heartbeat(questId, appId);
-                        
-                        const realProgress = await getQuestProgress(client, questId);
-                        process.stdout.write(`\r   ${renderProgressBar(realProgress)}`);
-                        if (onUpdate) onUpdate({ questId, questName, status: 'running', percent: realProgress });
-                        
-                        await sleep(intervalMs + Math.random() * 3000);
-                    }
+                    await solveGameQuest(client, quest, onUpdate);
                 } else {
                     throw new Error(`نوع غير مدعوم: ${questType}`);
-                }
-
-                // ✅ التحقق من الاكتمال الحقيقي
-                await sleep(2000);
-                const isCompleted = await isQuestCompleted(client, questId);
-                
-                if (!isCompleted) {
-                    throw new Error(`لم تكتمل المهمة فعلياً (completed_at = null)`);
                 }
 
                 results.push({ id: questId, name: questName, status: 'COMPLETED' });
                 console.log(`\n   ✅ اكتملت: ${questName}`);
                 if (onUpdate) onUpdate({ questId, questName, status: 'completed', percent: 100 });
 
+                // ✅ تأخير بسيط عشوائي بين المهام (2-5 ثواني فقط)
                 if (i < validQuests.length - 1) {
-                    const delay = 2000 + Math.random() * 3000; // ✅ قلل التأخير
+                    const delay = 2000 + Math.random() * 3000;
                     console.log(`   ⏳ انتظار ${Math.round(delay / 1000)} ثانية...`);
                     await sleep(delay);
                 }
@@ -212,6 +262,9 @@ async function solveSequentially(token, onUpdate) {
                 console.log(`\n   ❌ فشلت: ${err.message}`);
                 results.push({ id: questId, name: questName, status: 'REJECTED', error: err.message });
                 if (onUpdate) onUpdate({ questId, questName, status: 'rejected', error: err.message });
+                
+                // تأخير قصير حتى بعد الفشل
+                await sleep(2000);
             }
         }
 
