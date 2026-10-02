@@ -1,4 +1,4 @@
-// quests.js - محرك المهام مع فلترة يدوية للمهام المكتملة
+// quests.js - محرك المهام مع فلترة صحيحة من getStatus()
 let DiscordQuests = null;
 
 async function loadQuestsLib() {
@@ -51,24 +51,6 @@ function toQuestShape(raw, extra = {}) {
     };
 }
 
-// ✅ دالة الفحص الحقيقي: هل المهمة مكتملة أو مستلمة؟
-function isQuestDoneOrClaimed(quest) {
-    // ابحث في كل الأماكن المحتملة
-    const us = quest.userStatus || quest.user_status || quest._raw?.userStatus || quest._raw?.user_status;
-    if (!us) return false;
-    
-    // مكتملة
-    if (us.completed_at) return true;
-    // مستلمة (الـ Orbs مأخوذة)
-    if (us.claimed_at) return true;
-    // أخذ الجائزة
-    if (us.orb_quantity_claimed && us.orb_quantity_claimed > 0) return true;
-    // tier مستلم
-    if (us.claimed_tier !== null && us.claimed_tier !== undefined) return true;
-    
-    return false;
-}
-
 async function solveSequentially(token, onUpdate, signal = {}) {
     const results = [];
     const solvers = [];
@@ -92,31 +74,41 @@ async function solveSequentially(token, onUpdate, signal = {}) {
 
         if (signal.stopped) return { success: false, error: 'stopped' };
         
-        const allQuests = await dq.fetchQuests();
-        console.log(`📊 إجمالي المهام: ${allQuests.length}\n`);
+        // ✅ نستخدم getStatus بدل fetchQuests - فيها completed و solvable جاهزين
+        console.log('🔍 جاري جلب حالة المهام...\n');
+        const statusList = await dq.getStatus();
+        console.log(`📊 إجمالي المهام: ${statusList.length}\n`);
 
-        // ✅ فلترة ثلاثية: مكتملة + نوع مدعوم
+        // ✅ طباعة شكل أول مهمة للتشخيص (مرة وحدة)
+        if (statusList.length > 0 && !global._loggedStatus) {
+            global._loggedStatus = true;
+            console.log('🔍 بنية أول مهمة من getStatus:');
+            console.log(JSON.stringify(statusList[0], null, 2).slice(0, 1500));
+            console.log('');
+        }
+
+        // ✅ الفلترة تعتمد على المكتبة نفسها
         const supported = [];
         const skippedDone = [];
         const skippedType = [];
         
-        for (const q of allQuests) {
-            const name = q.name || q.id;
-            const type = normalizeType(q);
-            
-            // 1. فحص الاكتمال أولاً
-            if (isQuestDoneOrClaimed(q)) {
-                skippedDone.push({ name, type });
+        for (const s of statusList) {
+            // المكتبة تعطينا: { id, name, tasks, completed, solvable, ... }
+            if (s.completed) {
+                skippedDone.push(s);
                 continue;
             }
-            
-            // 2. فحص النوع
-            if (!SUPPORTED_TYPES.includes(type)) {
-                skippedType.push({ name, type });
+            if (s.solvable === false) {
+                skippedType.push(s);
                 continue;
             }
-            
-            supported.push(q);
+            // ناخذ فقط الأنواع اللي نبغاها
+            const type = normalizeType(s);
+            if (SUPPORTED_TYPES.includes(type)) {
+                supported.push(s);
+            } else {
+                skippedType.push(s);
+            }
         }
         
         console.log(`✅ مهام قابلة للحل: ${supported.length}`);
@@ -126,7 +118,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         if (skippedDone.length > 0) {
             console.log('✔️ المهام المكتملة/المستلمة:');
             skippedDone.forEach((s, i) => {
-                console.log(`   ${i + 1}. ${s.name} [${s.type}]`);
+                console.log(`   ${i + 1}. ${s.name || s.id}`);
             });
             console.log('');
         }
@@ -134,35 +126,33 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         if (skippedType.length > 0) {
             console.log('⏭️ المهام المتخطاة (نوع):');
             skippedType.forEach((s, i) => {
-                console.log(`   ${i + 1}. ${s.name} [${s.type}]`);
+                const type = normalizeType(s);
+                console.log(`   ${i + 1}. ${s.name || s.id} [${type}]`);
             });
             console.log('');
         }
 
-        // نبني نتائج المهام المتخطاة (للحفظ في الـ DB)
+        // نبني نتائج المتخطاة للحفظ
         const skippedResults = [
             ...skippedDone.map(s => ({
-                id: s.name, name: s.name, type: s.type,
+                id: s.id, name: s.name || s.id, type: normalizeType(s),
                 status: 'COMPLETED', percent: 100, error: null
             })),
             ...skippedType.map(s => ({
-                id: s.name, name: s.name, type: s.type,
+                id: s.id, name: s.name || s.id, type: normalizeType(s),
                 status: 'UNSUPPORTED', percent: 0, error: null
             })),
         ];
 
         if (supported.length === 0) {
             console.log('ℹ️ لا توجد مهام قابلة للحل حالياً.');
-            if (onUpdate) {
-                skippedResults.forEach(r => onUpdate(r));
-            }
+            if (onUpdate) skippedResults.forEach(r => onUpdate(r));
             return { success: true, quests: skippedResults };
         }
 
         console.log('📋 قائمة المهام القابلة للحل:');
         supported.forEach((q, i) => {
-            const type = normalizeType(q);
-            console.log(`   ${i + 1}. ${q.name || q.id} [${type}]`);
+            console.log(`   ${i + 1}. ${q.name || q.id} [${normalizeType(q)}]`);
         });
         console.log('');
 
@@ -186,6 +176,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                 let solver = null;
                 const TIMEOUT_MS = 20 * 60 * 1000;
 
+                // ✅ نمرر الـ quest الأصلي (المكتبة تحتاج الـ full object من getStatus)
                 if (typeof dq.createSolver === 'function') {
                     solver = dq.createSolver(quest);
                     solvers.push(solver);
@@ -218,7 +209,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                     
                     if (result && result.timeout) {
                         if (solver.stop) try { solver.stop(); } catch (e) {}
-                        throw new Error(`تجاوز الحد الأقصى (${TIMEOUT_MS / 60000} دقيقة)`);
+                        throw new Error(`تجاوز ${TIMEOUT_MS / 60000} دقيقة`);
                     }
 
                     const finalStatus = normalizeStatus(result?.status || 'completed');
@@ -231,18 +222,14 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                         dq.solve(quest),
                         sleep(TIMEOUT_MS).then(() => ({ timeout: true })),
                     ]);
-                    
-                    if (result && result.timeout) {
-                        throw new Error(`تجاوز الحد الأقصى`);
-                    }
+                    if (result?.timeout) throw new Error(`تجاوز ${TIMEOUT_MS / 60000} دقيقة`);
                     
                     const finalStatus = normalizeStatus(result?.status || 'completed');
                     results.push(toQuestShape(quest, { status: finalStatus, percent: 100 }));
                     if (onUpdate) onUpdate(toQuestShape(quest, { status: finalStatus, percent: 100 }));
                     console.log(`\n   ✅ ${questName}`);
-
                 } else {
-                    throw new Error('لا توجد دالة حل مناسبة في المكتبة');
+                    throw new Error('لا توجد دالة حل مناسبة');
                 }
 
                 if (i < supported.length - 1 && !signal.stopped) {
@@ -253,11 +240,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
 
             } catch (err) {
                 console.log(`\n   ❌ فشلت: ${err.message}`);
-                const failed = toQuestShape(quest, { 
-                    status: 'REJECTED', 
-                    percent: 0, 
-                    error: err.message 
-                });
+                const failed = toQuestShape(quest, { status: 'REJECTED', percent: 0, error: err.message });
                 results.push(failed);
                 if (onUpdate) onUpdate(failed);
                 await sleep(2000);
@@ -272,11 +255,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         console.log(`🏁 انتهت الجلسة - نجح: ${succeeded}, فشل: ${failed}${stopped}`);
         console.log('='.repeat(50) + '\n');
 
-        return { 
-            success: true, 
-            quests: [...results, ...skippedResults], 
-            stopped: signal.stopped 
-        };
+        return { success: true, quests: [...results, ...skippedResults], stopped: signal.stopped };
 
     } catch (err) {
         console.error(`\n❌ خطأ عام: ${err.message}`);
@@ -289,23 +268,17 @@ async function fetchQuestsOnly(token) {
         const QuestsClass = await loadQuestsLib();
         const dq = new QuestsClass(token);
 
-        const allQuests = await dq.fetchQuests();
+        const statusList = await dq.getStatus();
         
-        // فلترة المهام المكتملة/المستلمة
-        const mapped = allQuests.map(q => {
-            const done = isQuestDoneOrClaimed(q);
-            const type = normalizeType(q);
-            return {
-                id: q.id,
-                name: q.name || q.id,
-                type: type,
-                status: done ? 'COMPLETED' : 'PENDING',
-                percent: done ? 100 : 0,
-                error: null,
-            };
-        });
+        const mapped = statusList.map(s => ({
+            id: s.id,
+            name: s.name || s.id,
+            type: normalizeType(s),
+            status: s.completed ? 'COMPLETED' : (s.solvable === false ? 'UNSUPPORTED' : 'PENDING'),
+            percent: s.completed ? 100 : 0,
+            error: null,
+        }));
 
-        // المهام الصالحة للحل
         const valid = mapped.filter(q => 
             q.status === 'PENDING' && SUPPORTED_TYPES.includes(q.type)
         );
