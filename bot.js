@@ -10,14 +10,10 @@ class QuestBot {
     }
 
     async start(onUpdate) {
-        if (this.running) {
-            return { success: false, error: 'البوت شغال مسبقاً' };
-        }
+        if (this.running) return { success: false, error: 'البوت شغال مسبقاً' };
 
         const account = await database.getAccount(this.accountId);
-        if (!account) {
-            return { success: false, error: 'الحساب غير موجود' };
-        }
+        if (!account) return { success: false, error: 'الحساب غير موجود' };
 
         this.running = true;
         this.status = 'RUNNING';
@@ -40,29 +36,15 @@ class QuestBot {
                         error: update.error || null,
                     });
                 }
-
                 await database.updateQuests(this.accountId, this.currentQuests);
                 if (onUpdate) onUpdate(update);
             });
 
-            if (result.success) {
-                await database.updateQuests(this.accountId, result.quests);
-
-                const hasPending = result.quests.some(
-                    q => q.status !== 'COMPLETED' && q.status !== 'REJECTED'
-                );
-
-                this.running = false;
-                this.status = hasPending ? 'IDLE' : 'DONE';
-                await database.updateAccount(this.accountId, { status: this.status });
-
-                return { success: true, quests: result.quests, message: hasPending ? 'تمت المعالجة' : 'خلصت كل المهام' };
-            } else {
-                this.running = false;
-                this.status = 'ERROR';
-                await database.updateAccount(this.accountId, { status: 'ERROR' });
-                return { success: false, error: result.error };
-            }
+            await database.updateQuests(this.accountId, result.quests || []);
+            this.running = false;
+            this.status = 'DONE';
+            await database.updateAccount(this.accountId, { status: 'DONE' });
+            return { success: true, quests: result.quests };
         } catch (err) {
             this.running = false;
             this.status = 'ERROR';
