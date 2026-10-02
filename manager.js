@@ -29,16 +29,18 @@ function stopAccount(accountId) {
     return bot.stop();
 }
 
+// ✅ C3: لا يلمس DB إطلاقاً
 function getAccountStatus(accountId) {
     const bot = activeBots.get(accountId);
     if (bot) {
-        return bot.getStatus();
+        return { running: bot.running, status: bot.status };
     }
-    const account = database.getAccount(accountId);
-    return {
-        running: false,
-        status: account ? account.status : 'UNKNOWN',
-    };
+    // لا نرجع للـ DB - الراوت راح يستخدم الحالة من الصف
+    return { running: false, status: null };
+}
+
+function isRunning(accountId) {
+    return activeBots.has(accountId);
 }
 
 function getActiveBots() {
@@ -49,5 +51,6 @@ module.exports = {
     startAccount,
     stopAccount,
     getAccountStatus,
+    isRunning,
     getActiveBots,
 };

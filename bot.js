@@ -1,5 +1,5 @@
 const database = require('./database');
-const { solveSequentially } = require('./quests');
+const { solveSequentially, toQuestShape } = require('./quests');
 
 class QuestBot {
     constructor(accountId) {
@@ -7,61 +7,112 @@ class QuestBot {
         this.running = false;
         this.status = 'IDLE';
         this.currentQuests = [];
+        this.signal = { stopped: false };  // ✅ إشارة الإيقاف الحقيقية
+        this.startedAt = null;
     }
 
     async start(onUpdate) {
-        if (this.running) return { success: false, error: 'البوت شغال مسبقاً' };
+        if (this.running) {
+            return { success: false, error: 'البوت شغال مسبقاً' };
+        }
 
         const account = await database.getAccount(this.accountId);
         if (!account) return { success: false, error: 'الحساب غير موجود' };
 
         this.running = true;
         this.status = 'RUNNING';
-        await database.updateAccount(this.accountId, { status: 'RUNNING' });
+        this.signal = { stopped: false };
+        this.startedAt = new Date().toISOString();
         this.currentQuests = [];
 
+        // حافظ على المهام السابقة إن وجدت (C5)
+        const previousQuests = (account.quests || []).filter(q => 
+            q.status === 'COMPLETED' || q.status === 'CLAIMED'
+        );
+
+        await database.updateAccount(this.accountId, { status: 'RUNNING' });
+
         try {
-            const result = await solveSequentially(account.token, async (update) => {
-                const existing = this.currentQuests.find(q => q.id === update.questId);
-                if (existing) {
-                    existing.status = update.status;
-                    if (update.percent !== undefined) existing.percent = update.percent;
-                    if (update.error) existing.error = update.error;
-                } else {
-                    this.currentQuests.push({
-                        id: update.questId,
-                        name: update.questName,
-                        status: update.status,
-                        percent: update.percent || 0,
-                        error: update.error || null,
-                    });
-                }
-                await database.updateQuests(this.accountId, this.currentQuests);
-                if (onUpdate) onUpdate(update);
+            const result = await solveSequentially(
+                account.token,
+                async (update) => {
+                    // دمج المهام الجديدة مع القديمة
+                    const existing = this.currentQuests.find(q => q.id === update.id);
+                    if (existing) {
+                        Object.assign(existing, update);
+                    } else {
+                        this.currentQuests.push(update);
+                    }
+                    // ادمج المهام المكتملة سابقاً
+                    const merged = [...previousQuests, ...this.currentQuests];
+                    // إزالة التكرار
+                    const unique = Array.from(new Map(merged.map(q => [q.id, q])).values());
+                    await database.updateQuests(this.accountId, unique);
+                    if (onUpdate) onUpdate(update);
+                },
+                this.signal  // ✅ نمرر الإشارة
+            );
+
+            // ✅ C4: افحص success
+            if (!result.success) {
+                this.running = false;
+                this.status = 'ERROR';
+                await database.updateAccount(this.accountId, {
+                    status: 'ERROR',
+                    lastRun: this.startedAt,
+                });
+                // لا تمسح المهام الموجودة
+                console.log(`[bot] ❌ فشل التشغيل: ${result.error}`);
+                return { success: false, error: result.error };
+            }
+
+            // ادمج النتائج النهائية مع السابقة
+            const finalQuests = [...previousQuests, ...(result.quests || [])];
+            const uniqueQuests = Array.from(new Map(finalQuests.map(q => [q.id, q])).values());
+
+            await database.updateQuests(this.accountId, uniqueQuests);
+
+            this.running = false;
+            // ✅ C6: لا تكتب DONE لو تم الإيقاف يدوياً
+            this.status = result.stopped ? 'IDLE' : 'DONE';
+            await database.updateAccount(this.accountId, {
+                status: this.status,
+                lastRun: this.startedAt,
             });
 
-            await database.updateQuests(this.accountId, result.quests || []);
-            this.running = false;
-            this.status = 'DONE';
-            await database.updateAccount(this.accountId, { status: 'DONE' });
-            return { success: true, quests: result.quests };
+            return {
+                success: true,
+                quests: uniqueQuests,
+                message: result.stopped ? 'تم الإيقاف' : 'خلصت المهام',
+            };
+
         } catch (err) {
             this.running = false;
             this.status = 'ERROR';
             await database.updateAccount(this.accountId, { status: 'ERROR' });
+            console.error(`[bot] ❌ خطأ: ${err.message}`);
             return { success: false, error: err.message };
         }
     }
 
+    // ✅ C6: إيقاف حقيقي
     stop() {
+        if (!this.running) {
+            return { success: false, error: 'البوت مو شغال' };
+        }
+        this.signal.stopped = true;
         this.running = false;
         this.status = 'IDLE';
-        database.updateAccount(this.accountId, { status: 'IDLE' });
+        console.log(`[bot] ⏹️ تم إرسال إشارة الإيقاف للحساب ${this.accountId}`);
         return { success: true, message: 'تم الإيقاف' };
     }
 
     getStatus() {
-        return { running: this.running, status: this.status };
+        return {
+            running: this.running,
+            status: this.status,
+            startedAt: this.startedAt,
+        };
     }
 }
 
