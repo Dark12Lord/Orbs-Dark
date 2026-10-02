@@ -3,39 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Dark Orbs — لوحة التحكم</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
         body { background: #0d0d12; color: #e0e0e0; min-height: 100vh; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; }
-
         .login-box { background: #1a1a24; padding: 40px; border-radius: 16px; max-width: 400px; margin: 100px auto; text-align: center; }
         .login-box h1 { color: #a78bfa; margin-bottom: 20px; font-size: 24px; }
         .login-box input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333; background: #0d0d12; color: #fff; font-size: 16px; margin-bottom: 16px; }
         .login-box button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #7c3aed; color: #fff; font-size: 16px; cursor: pointer; }
-
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
         .header h1 { color: #a78bfa; font-size: 22px; }
-        .header button { padding: 8px 16px; border-radius: 8px; border: 1px solid #555; background: transparent; color: #e0e0e0; cursor: pointer; font-size: 14px; }
-
+        .header button { padding: 8px 16px; border-radius: 8px; border: 1px solid #555; background: transparent; color: #e0e0e0; cursor: pointer; }
         .add-box { background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-        .add-box input { flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #0d0d12; color: #fff; font-size: 14px; }
-        .add-box button { padding: 12px 24px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; cursor: pointer; font-size: 14px; }
-
+        .add-box input { flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #0d0d12; color: #fff; }
+        .add-box button { padding: 12px 24px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; cursor: pointer; }
         .account-card { background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px; border-right: 4px solid #333; }
         .account-card.running { border-right-color: #22c55e; }
         .account-card.done { border-right-color: #a78bfa; }
         .account-card.error { border-right-color: #ef4444; }
-
         .account-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .account-name { font-size: 16px; font-weight: bold; }
         .account-status { font-size: 12px; padding: 2px 10px; border-radius: 20px; background: #333; }
         .account-status.running { background: #166534; color: #86efac; }
         .account-status.done { background: #4c1d95; color: #c4b5fd; }
-        .account-status.idle { background: #333; color: #aaa; }
         .account-status.error { background: #7f1d1d; color: #fca5a5; }
-
         .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
         .account-actions button { padding: 6px 14px; border-radius: 6px; border: none; font-size: 12px; cursor: pointer; }
         .btn-start { background: #16a34a; color: #fff; }
@@ -43,36 +34,21 @@
         .btn-refresh { background: #0ea5e9; color: #fff; }
         .btn-details { background: #333; color: #e0e0e0; }
         .btn-delete { background: #333; color: #ef4444; }
-
         .quest-stats { margin-top: 10px; font-size: 13px; color: #aaa; }
         .quest-stats span { margin-left: 12px; }
-
         .details-box { margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px; display: none; font-size: 13px; max-height: 400px; overflow-y: auto; }
         .details-box.show { display: block; }
-
         .quest-item { padding: 8px 0; border-bottom: 1px solid #1a1a24; }
-        .quest-item:last-child { border: none; }
-        .quest-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .quest-name { flex: 1; font-size: 13px; }
-        .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
-        .quest-status.completed, .quest-status.claimed { background: #166534; color: #86efac; }
+        .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+        .quest-status.completed { background: #166534; color: #86efac; }
         .quest-status.rejected { background: #7f1d1d; color: #fca5a5; }
         .quest-status.running { background: #713f12; color: #fde047; }
-        .quest-status.pending { background: #333; color: #aaa; }
-
         .progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; margin-top: 4px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 3px; transition: width 0.5s ease; }
-        .progress-text { font-size: 11px; color: #a78bfa; margin-top: 2px; }
-        .quest-error { color: #ef4444; font-size: 11px; margin-top: 4px; }
-
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); transition: width 0.5s ease; }
         .empty { text-align: center; padding: 40px; color: #666; }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: #1a1a24; padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed; display: none; z-index: 999; max-width: 300px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #1a1a24; padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed; display: none; z-index: 999; }
         .toast.show { display: block; }
         .toast.error { border-right-color: #ef4444; }
-        .toast.success { border-right-color: #22c55e; }
-
-        .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-left: 6px; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     </style>
 </head>
 <body>
@@ -81,71 +57,40 @@
             <h1>🟣 Dark Orbs</h1>
             <input type="password" id="passwordInput" placeholder="كلمة المرور" />
             <button onclick="login()">دخول</button>
-            <p id="loginError" style="color: #ef4444; margin-top: 10px; font-size: 14px;"></p>
+            <p id="loginError" style="color: #ef4444; margin-top: 10px;"></p>
         </div>
-
         <div id="dashboardView" style="display: none;">
             <div class="header">
-                <h1>🟣 Dark Orbs <span class="live-dot"></span></h1>
+                <h1>🟣 Dark Orbs</h1>
                 <button onclick="logout()">خروج</button>
             </div>
-
             <div class="add-box">
                 <input type="text" id="tokenInput" placeholder="الصق توكن الحساب هنا..." />
                 <input type="text" id="nameInput" placeholder="اسم (اختياري)" style="max-width: 150px;" />
                 <button onclick="addAccount()">إضافة</button>
             </div>
-
             <div id="accountsList"></div>
         </div>
-
         <div class="toast" id="toast"></div>
     </div>
-
     <script>
-        let accounts = [];
-        let refreshInterval = null;
-
-        function showToast(msg, type = 'info') {
+        let accounts = [], refreshInterval = null;
+        function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = 'toast show' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+            t.textContent = msg; t.className = 'toast show' + (isError ? ' error' : '');
             setTimeout(() => t.classList.remove('show'), 4000);
         }
-
         async function noCacheFetch(url, options = {}) {
-            const separator = url.includes('?') ? '&' : '?';
-            const cacheBuster = url + separator + '_t=' + Date.now();
-            return fetch(cacheBuster, {
-                ...options,
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache', ...(options.headers || {}) },
-            });
+            return fetch(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now(), { ...options, cache: 'no-store', headers: { 'Cache-Control': 'no-cache', ...(options.headers || {}) } });
         }
-
         async function login() {
             const password = document.getElementById('passwordInput').value;
-            const res = await noCacheFetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password }),
-            });
+            const res = await noCacheFetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
             const data = await res.json();
-            if (data.success) showDashboard();
-            else document.getElementById('loginError').textContent = data.error;
+            if (data.success) showDashboard(); else document.getElementById('loginError').textContent = data.error;
         }
-
-        async function logout() {
-            await noCacheFetch('/api/logout', { method: 'POST' });
-            location.reload();
-        }
-
-        async function checkAuth() {
-            const res = await noCacheFetch('/api/check');
-            const data = await res.json();
-            if (data.authenticated) showDashboard();
-        }
-
+        async function logout() { await noCacheFetch('/api/logout', { method: 'POST' }); location.reload(); }
+        async function checkAuth() { const res = await noCacheFetch('/api/check'); const data = await res.json(); if (data.authenticated) showDashboard(); }
         function showDashboard() {
             document.getElementById('loginView').style.display = 'none';
             document.getElementById('dashboardView').style.display = 'block';
@@ -153,158 +98,55 @@
             if (refreshInterval) clearInterval(refreshInterval);
             refreshInterval = setInterval(loadAccounts, 3000);
         }
-
         async function loadAccounts() {
-            try {
-                const res = await noCacheFetch('/api/accounts');
-                accounts = await res.json();
-                renderAccounts();
-            } catch (e) {
-                console.error('فشل تحميل الحسابات:', e);
-            }
+            try { const res = await noCacheFetch('/api/accounts'); accounts = await res.json(); renderAccounts(); } catch (e) {}
         }
-
         function renderAccounts() {
-            const container = document.getElementById('accountsList');
-            if (accounts.length === 0) {
-                container.innerHTML = '<div class="empty">ما في حسابات. أضف واحد فوق 👆</div>';
-                return;
-            }
-
-            container.innerHTML = accounts.map(acc => {
-                const quests = acc.quests || [];
-                const completed = quests.filter(q => q.status === 'COMPLETED' || q.status === 'CLAIMED').length;
-                const rejected = quests.filter(q => q.status === 'REJECTED').length;
-                const running = quests.filter(q => q.status === 'running').length;
-                const pending = quests.filter(q => q.status === 'PENDING' || q.status === 'IDLE').length;
-
-                const statusClass = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
-                const statusText = {
-                    'running': '🟢 شغال',
-                    'done': '✅ خلص',
-                    'idle': '⚪ متوقف',
-                    'error': '🔴 خطأ',
-                }[statusClass] || '⚪ متوقف';
-
-                return `
-                    <div class="account-card ${statusClass}">
-                        <div class="account-header">
-                            <div class="account-name">${acc.name}</div>
-                            <div class="account-status ${statusClass}">${statusText}</div>
-                        </div>
-                        <div class="quest-stats">
-                            <span>✅ ${completed} مكتملة</span>
-                            <span>▶️ ${running} شغالة</span>
-                            <span>⏳ ${pending} معلقة</span>
-                            <span>❌ ${rejected} مرفوضة</span>
-                        </div>
-                        <div class="account-actions">
-                            <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
-                            <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
-                            <button class="btn-refresh" onclick="refreshAccount('${acc.id}')">🔄 تحديث</button>
-                            <button class="btn-details" onclick="toggleDetails('${acc.id}')">📋 التفاصيل</button>
-                            <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
-                        </div>
-                        <div class="details-box" id="details-${acc.id}">
-                            ${quests.length > 0 ? quests.map(q => `
-                                <div class="quest-item">
-                                    <div class="quest-header">
-                                        <span class="quest-name">${q.name || q.id}</span>
-                                        <span class="quest-status ${(q.status || '').toLowerCase()}">${q.status}</span>
-                                    </div>
-                                    ${q.status === 'running' || (q.percent !== undefined && q.percent > 0 && q.percent < 100) ? `
-                                        <div class="progress-bar">
-                                            <div class="progress-fill" style="width: ${q.percent || 0}%"></div>
-                                        </div>
-                                        <div class="progress-text">${q.percent || 0}%</div>
-                                    ` : ''}
-                                    ${q.error ? `<div class="quest-error">⚠️ ${q.error}</div>` : ''}
-                                </div>
-                            `).join('') : '<div style="color:#666;">ما في مهام مسجلة. اضغط "🔄 تحديث" عشان تجيب المهام.</div>'}
-                        </div>
+            const c = document.getElementById('accountsList');
+            if (accounts.length === 0) { c.innerHTML = '<div class="empty">ما في حسابات. أضف واحد فوق 👆</div>'; return; }
+            c.innerHTML = accounts.map(acc => {
+                const qs = acc.quests || [];
+                const completed = qs.filter(q => q.status === 'COMPLETED' || q.status === 'CLAIMED').length;
+                const rejected = qs.filter(q => q.status === 'REJECTED').length;
+                const running = qs.filter(q => q.status === 'running').length;
+                const sc = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
+                const st = { running: '🟢 شغال', done: '✅ خلص', idle: '⚪ متوقف', error: '🔴 خطأ' }[sc] || '⚪ متوقف';
+                return `<div class="account-card ${sc}">
+                    <div class="account-header"><div style="font-weight:bold;">${acc.name}</div><div class="account-status ${sc}">${st}</div></div>
+                    <div class="quest-stats"><span>✅ ${completed}</span><span>▶️ ${running}</span><span>❌ ${rejected}</span></div>
+                    <div class="account-actions">
+                        <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
+                        <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
+                        <button class="btn-refresh" onclick="refreshAccount('${acc.id}')">🔄 تحديث</button>
+                        <button class="btn-details" onclick="document.getElementById('det-${acc.id}').classList.toggle('show')">📋</button>
+                        <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
                     </div>
-                `;
+                    <div class="details-box" id="det-${acc.id}">
+                        ${qs.length ? qs.map(q => `<div class="quest-item"><span>${q.name || q.id}</span><span class="quest-status ${(q.status||'').toLowerCase()}">${q.status}</span>${q.percent ? `<div class="progress-bar"><div class="progress-fill" style="width:${q.percent}%"></div></div>` : ''}${q.error ? `<div style="color:#ef4444;font-size:11px;">${q.error}</div>` : ''}</div>`).join('') : '<div style="color:#666;">ما في مهام. اضغط تحديث.</div>'}
+                    </div>
+                </div>`;
             }).join('');
         }
-
         async function addAccount() {
             const token = document.getElementById('tokenInput').value.trim();
             const name = document.getElementById('nameInput').value.trim();
-            if (!token) return showToast('الصق التوكن أول', 'error');
-
-            showToast('جاري إضافة الحساب...');
-            try {
-                const res = await noCacheFetch('/api/accounts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, name }),
-                });
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('tokenInput').value = '';
-                    document.getElementById('nameInput').value = '';
-                    if (data.existing) {
-                        showToast('⚠️ الحساب موجود مسبقاً: ' + data.name);
-                    } else {
-                        showToast('✅ تم إضافة: ' + data.name, 'success');
-                    }
-                    loadAccounts();
-                } else {
-                    showToast('خطأ: ' + data.error, 'error');
-                }
-            } catch (e) {
-                showToast('فشل الاتصال بالسيرفر', 'error');
-            }
+            if (!token) return showToast('الصق التوكن أول', true);
+            const res = await noCacheFetch('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, name }) });
+            const data = await res.json();
+            if (data.success) { document.getElementById('tokenInput').value = ''; showToast('تم: ' + data.name); loadAccounts(); }
+            else showToast(data.error, true);
         }
-
-        async function deleteAccount(id) {
-            if (!confirm('متأكد تحذف الحساب؟')) return;
-            await noCacheFetch(`/api/accounts/${id}`, { method: 'DELETE' });
-            loadAccounts();
-        }
-
-        async function startAccount(id) {
-            showToast('جاري التشغيل...');
-            try {
-                await noCacheFetch(`/api/accounts/${id}/start`, { method: 'POST' });
-                setTimeout(loadAccounts, 1000);
-                setTimeout(loadAccounts, 3000);
-            } catch (e) {
-                showToast('فشل التشغيل', 'error');
-            }
-        }
-
-        async function stopAccount(id) {
-            await noCacheFetch(`/api/accounts/${id}/stop`, { method: 'POST' });
-            loadAccounts();
-        }
-
-        // ✅ زر التحديث الجديد
+        async function deleteAccount(id) { if (!confirm('متأكد؟')) return; await noCacheFetch(`/api/accounts/${id}`, { method: 'DELETE' }); loadAccounts(); }
+        async function startAccount(id) { showToast('جاري التشغيل...'); await noCacheFetch(`/api/accounts/${id}/start`, { method: 'POST' }); setTimeout(loadAccounts, 2000); }
+        async function stopAccount(id) { await noCacheFetch(`/api/accounts/${id}/stop`, { method: 'POST' }); loadAccounts(); }
         async function refreshAccount(id) {
             showToast('🔄 جاري جلب المهام...');
-            try {
-                const res = await noCacheFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(`✅ تم التحديث: ${data.total} مهمة (${data.valid} صالحة)`, 'success');
-                    loadAccounts();
-                } else {
-                    showToast('خطأ: ' + data.error, 'error');
-                }
-            } catch (e) {
-                showToast('فشل التحديث', 'error');
-            }
+            const res = await noCacheFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) { showToast(`✅ ${data.total} مهمة`); loadAccounts(); }
+            else showToast(data.error, true);
         }
-
-        function toggleDetails(id) {
-            const el = document.getElementById(`details-${id}`);
-            el.classList.toggle('show');
-        }
-
-        window.addEventListener('beforeunload', () => {
-            if (refreshInterval) clearInterval(refreshInterval);
-        });
-
+        window.addEventListener('beforeunload', () => { if (refreshInterval) clearInterval(refreshInterval); });
         checkAuth();
     </script>
 </body>
