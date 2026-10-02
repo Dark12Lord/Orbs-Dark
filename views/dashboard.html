@@ -1,153 +1,386 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dark Orbs — لوحة التحكم</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
-        body { background: #0d0d12; color: #e0e0e0; min-height: 100vh; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .login-box { background: #1a1a24; padding: 40px; border-radius: 16px; max-width: 400px; margin: 100px auto; text-align: center; }
-        .login-box h1 { color: #a78bfa; margin-bottom: 20px; font-size: 24px; }
-        .login-box input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #333; background: #0d0d12; color: #fff; font-size: 16px; margin-bottom: 16px; }
-        .login-box button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #7c3aed; color: #fff; font-size: 16px; cursor: pointer; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .header h1 { color: #a78bfa; font-size: 22px; }
-        .header button { padding: 8px 16px; border-radius: 8px; border: 1px solid #555; background: transparent; color: #e0e0e0; cursor: pointer; }
-        .add-box { background: #1a1a24; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-        .add-box input { flex: 1; min-width: 200px; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #0d0d12; color: #fff; }
-        .add-box button { padding: 12px 24px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; cursor: pointer; }
-        .account-card { background: #1a1a24; padding: 16px; border-radius: 12px; margin-bottom: 12px; border-right: 4px solid #333; }
-        .account-card.running { border-right-color: #22c55e; }
-        .account-card.done { border-right-color: #a78bfa; }
-        .account-card.error { border-right-color: #ef4444; }
-        .account-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .account-status { font-size: 12px; padding: 2px 10px; border-radius: 20px; background: #333; }
-        .account-status.running { background: #166534; color: #86efac; }
-        .account-status.done { background: #4c1d95; color: #c4b5fd; }
-        .account-status.error { background: #7f1d1d; color: #fca5a5; }
-        .account-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .account-actions button { padding: 6px 14px; border-radius: 6px; border: none; font-size: 12px; cursor: pointer; }
-        .btn-start { background: #16a34a; color: #fff; }
-        .btn-stop { background: #dc2626; color: #fff; }
-        .btn-refresh { background: #0ea5e9; color: #fff; }
-        .btn-details { background: #333; color: #e0e0e0; }
-        .btn-delete { background: #333; color: #ef4444; }
-        .quest-stats { margin-top: 10px; font-size: 13px; color: #aaa; }
-        .quest-stats span { margin-left: 12px; }
-        .details-box { margin-top: 12px; padding: 12px; background: #0d0d12; border-radius: 8px; display: none; font-size: 13px; max-height: 400px; overflow-y: auto; }
-        .details-box.show { display: block; }
-        .quest-item { padding: 8px 0; border-bottom: 1px solid #1a1a24; }
-        .quest-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; }
-        .quest-status.completed { background: #166534; color: #86efac; }
-        .quest-status.rejected { background: #7f1d1d; color: #fca5a5; }
-        .quest-status.running { background: #713f12; color: #fde047; }
-        .progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; margin-top: 4px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); transition: width 0.5s ease; }
-        .empty { text-align: center; padding: 40px; color: #666; }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: #1a1a24; padding: 14px 20px; border-radius: 10px; border-right: 4px solid #7c3aed; display: none; z-index: 999; }
-        .toast.show { display: block; }
-        .toast.error { border-right-color: #ef4444; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b12">
+<title>Dark Orbs — لوحة التحكم</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🟣%3C/text%3E%3C/svg%3E">
+<style>
+:root{--bg:#0b0b12;--card:#15151f;--card2:#1c1c29;--line:#2a2a3a;--tx:#e8e8f0;--mut:#8b8ba0;--pri:#7c3aed;--pri2:#a78bfa;--ok:#22c55e;--warn:#eab308;--bad:#ef4444;--r:14px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,'Noto Sans Arabic',system-ui,sans-serif;background:radial-gradient(900px 500px at 85% -10%,#2a1a5a55,transparent),var(--bg);color:var(--tx);min-height:100vh;padding:16px;line-height:1.5}
+.container{max-width:1000px;margin:0 auto}
+.hidden{display:none!important}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;border-radius:10px;min-height:40px;padding:0 14px;transition:filter .15s,transform .05s}
+button:hover:not(:disabled){filter:brightness(1.12)}button:active:not(:disabled){transform:scale(.97)}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--pri2);outline-offset:2px}
+input{background:#0b0b12;border:1px solid var(--line);border-radius:10px;padding:0 14px;min-height:44px;width:100%}
+input:focus{border-color:var(--pri2);outline:none;box-shadow:0 0 0 3px #7c3aed33}
+.primary{background:linear-gradient(135deg,var(--pri),#6d28d9);color:#fff;font-weight:600}
+.ghost{background:transparent;border:1px solid var(--line)}
+/* login */
+.login{max-width:380px;margin:12vh auto 0;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:32px 24px;text-align:center;box-shadow:0 20px 60px #0008}
+.orb{width:64px;height:64px;margin:0 auto 14px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#c4b5fd,var(--pri) 55%,#3b0764);box-shadow:0 0 40px #7c3aed88}
+.login h1{font-size:22px;color:var(--pri2);margin-bottom:18px}
+.login input{margin-bottom:12px;text-align:center}
+.login .primary{width:100%;min-height:46px}
+#loginError{color:var(--bad);min-height:22px;margin-top:10px;font-size:14px}
+/* header */
+.header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .orb{width:34px;height:34px;margin:0;box-shadow:0 0 18px #7c3aed88}
+.brand h1{font-size:19px;color:var(--pri2)}
+.conn{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
+.conn i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.conn.off i{background:var(--bad)}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;text-align:center}
+.stat b{display:block;font-size:22px;color:var(--pri2)}
+.stat span{font-size:12px;color:var(--mut)}
+/* add */
+.add{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 160px auto;gap:10px}
+/* toolbar */
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar input{flex:1;min-width:160px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--line);color:var(--mut);font-size:13px;padding:0 12px;min-height:36px;border-radius:20px}
+.chip.on{background:#7c3aed33;border-color:var(--pri);color:#fff}
+/* cards */
+#accountsList{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.card{background:var(--card);border:1px solid var(--line);border-right:4px solid #444;border-radius:var(--r);padding:14px}
+.card.running{border-right-color:var(--ok)}.card.done{border-right-color:var(--pri2)}.card.error{border-right-color:var(--bad)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub{font-size:12px;color:var(--mut);margin-top:2px}
+.badge{font-size:12px;padding:2px 10px;border-radius:20px;background:#333;white-space:nowrap}
+.badge.running{background:#14532d;color:#86efac}.badge.done{background:#4c1d95;color:#ddd6fe}.badge.error{background:#7f1d1d;color:#fecaca}
+.badge.running::before{content:"";display:inline-block;width:6px;height:6px;margin-left:6px;border-radius:50%;background:var(--ok);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.bar{height:6px;background:#2a2a3a;border-radius:3px;overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--pri),var(--pri2));border-radius:3px;transition:width .5s}
+.live{font-size:12px;color:var(--warn);margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipsrow{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--mut);margin-top:10px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.acts button{font-size:13px;min-height:38px;padding:0 12px;color:#fff}
+.b-start{background:#16a34a}.b-stop{background:#dc2626}.b-refresh{background:#0284c7}.b-det{background:#333}.b-del{background:#2a1a1a;color:#f87171!important;margin-right:auto}
+.details{margin-top:12px;padding:6px 12px;background:#0b0b12;border-radius:10px;max-height:320px;overflow-y:auto;font-size:13px}
+.q{padding:10px 0;border-bottom:1px solid var(--card2)}.q:last-child{border:0}
+.q-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.q-name{overflow:hidden;text-overflow:ellipsis}
+.q-meta{font-size:11px;color:var(--mut);margin-top:2px}
+.q-err{color:#f87171;font-size:11px;margin-top:4px;word-break:break-word}
+.badge.q-done{background:#14532d;color:#86efac}.badge.q-running{background:#713f12;color:#fde047}.badge.q-failed{background:#7f1d1d;color:#fecaca}.badge.q-pending{background:#1e3a5f;color:#93c5fd}.badge.q-unsupported{background:#333;color:#aaa}
+.empty{grid-column:1/-1;text-align:center;padding:48px 16px;color:var(--mut)}
+/* toast + modal */
+#toasts{position:fixed;bottom:16px;left:16px;right:16px;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:99;pointer-events:none}
+.toast{background:var(--card2);border:1px solid var(--line);border-right:4px solid var(--pri);padding:12px 18px;border-radius:12px;box-shadow:0 8px 30px #000a;max-width:420px;animation:in .2s}
+.toast.error{border-right-color:var(--bad)}
+@keyframes in{from{opacity:0;transform:translateY(8px)}}
+#modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:100;padding:16px}
+#modal.show{display:flex}
+.mbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:340px;width:100%;text-align:center}
+.mbox p{margin-bottom:16px}.mbox .row{justify-content:center}
+@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}.add{grid-template-columns:1fr}.acts button{flex:1 1 auto}.b-del{margin-right:0}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body>
-    <div class="container">
-        <div id="loginView" class="login-box">
-            <h1>🟣 Dark Orbs</h1>
-            <input type="password" id="passwordInput" placeholder="كلمة المرور" />
-            <button onclick="login()">دخول</button>
-            <p id="loginError" style="color: #ef4444; margin-top: 10px;"></p>
-        </div>
-        <div id="dashboardView" style="display: none;">
-            <div class="header">
-                <h1>🟣 Dark Orbs</h1>
-                <button onclick="logout()">خروج</button>
-            </div>
-            <div class="add-box">
-                <input type="text" id="tokenInput" placeholder="الصق توكن الحساب هنا..." />
-                <input type="text" id="nameInput" placeholder="اسم (اختياري)" style="max-width: 150px;" />
-                <button onclick="addAccount()">إضافة</button>
-            </div>
-            <div id="accountsList"></div>
-        </div>
-        <div class="toast" id="toast"></div>
+<div class="container">
+  <div id="loginView" class="login">
+    <div class="orb"></div>
+    <h1>Dark Orbs</h1>
+    <input type="password" id="passwordInput" placeholder="كلمة المرور" autocomplete="current-password" aria-label="كلمة المرور">
+    <button class="primary" id="loginBtn" onclick="login()">دخول</button>
+    <p id="loginError" role="alert"></p>
+  </div>
+
+  <div id="dashboardView" class="hidden">
+    <div class="header">
+      <div class="brand"><div class="orb"></div><div><h1>Dark Orbs</h1><div class="conn" id="conn"><i></i><span id="connTxt">جاري الاتصال...</span></div></div></div>
+      <button class="ghost" onclick="logout()">خروج</button>
     </div>
-    <script>
-        let accounts = [], refreshInterval = null;
-        function showToast(msg, isError = false) {
-            const t = document.getElementById('toast');
-            t.textContent = msg; t.className = 'toast show' + (isError ? ' error' : '');
-            setTimeout(() => t.classList.remove('show'), 4000);
-        }
-        async function noCacheFetch(url, options = {}) {
-            return fetch(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now(), { ...options, cache: 'no-store', headers: { 'Cache-Control': 'no-cache', ...(options.headers || {}) } });
-        }
-        async function login() {
-            const password = document.getElementById('passwordInput').value;
-            const res = await noCacheFetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-            const data = await res.json();
-            if (data.success) showDashboard(); else document.getElementById('loginError').textContent = data.error;
-        }
-        async function logout() { await noCacheFetch('/api/logout', { method: 'POST' }); location.reload(); }
-        async function checkAuth() { const res = await noCacheFetch('/api/check'); const data = await res.json(); if (data.authenticated) showDashboard(); }
-        function showDashboard() {
-            document.getElementById('loginView').style.display = 'none';
-            document.getElementById('dashboardView').style.display = 'block';
-            loadAccounts();
-            if (refreshInterval) clearInterval(refreshInterval);
-            refreshInterval = setInterval(loadAccounts, 3000);
-        }
-        async function loadAccounts() {
-            try { const res = await noCacheFetch('/api/accounts'); accounts = await res.json(); renderAccounts(); } catch (e) {}
-        }
-        function renderAccounts() {
-            const c = document.getElementById('accountsList');
-            if (accounts.length === 0) { c.innerHTML = '<div class="empty">ما في حسابات. أضف واحد فوق 👆</div>'; return; }
-            c.innerHTML = accounts.map(acc => {
-                const qs = acc.quests || [];
-                const completed = qs.filter(q => q.status === 'COMPLETED' || q.status === 'CLAIMED').length;
-                const rejected = qs.filter(q => q.status === 'REJECTED').length;
-                const running = qs.filter(q => q.status === 'running').length;
-                const sc = (acc.liveStatus || acc.status || 'IDLE').toLowerCase();
-                const st = { running: '🟢 شغال', done: '✅ خلص', idle: '⚪ متوقف', error: '🔴 خطأ' }[sc] || '⚪ متوقف';
-                return `<div class="account-card ${sc}">
-                    <div class="account-header"><div style="font-weight:bold;">${acc.name}</div><div class="account-status ${sc}">${st}</div></div>
-                    <div class="quest-stats"><span>✅ ${completed}</span><span>▶️ ${running}</span><span>❌ ${rejected}</span></div>
-                    <div class="account-actions">
-                        <button class="btn-start" onclick="startAccount('${acc.id}')">▶ تشغيل</button>
-                        <button class="btn-stop" onclick="stopAccount('${acc.id}')">⏹ إيقاف</button>
-                        <button class="btn-refresh" onclick="refreshAccount('${acc.id}')">🔄 تحديث</button>
-                        <button class="btn-details" onclick="document.getElementById('det-${acc.id}').classList.toggle('show')">📋</button>
-                        <button class="btn-delete" onclick="deleteAccount('${acc.id}')">🗑</button>
-                    </div>
-                    <div class="details-box" id="det-${acc.id}">
-                        ${qs.length ? qs.map(q => `<div class="quest-item"><span>${q.name || q.id}</span><span class="quest-status ${(q.status||'').toLowerCase()}">${q.status}</span>${q.percent ? `<div class="progress-bar"><div class="progress-fill" style="width:${q.percent}%"></div></div>` : ''}${q.error ? `<div style="color:#ef4444;font-size:11px;">${q.error}</div>` : ''}</div>`).join('') : '<div style="color:#666;">ما في مهام. اضغط تحديث.</div>'}
-                    </div>
-                </div>`;
-            }).join('');
-        }
-        async function addAccount() {
-            const token = document.getElementById('tokenInput').value.trim();
-            const name = document.getElementById('nameInput').value.trim();
-            if (!token) return showToast('الصق التوكن أول', true);
-            const res = await noCacheFetch('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, name }) });
-            const data = await res.json();
-            if (data.success) { document.getElementById('tokenInput').value = ''; showToast('تم: ' + data.name); loadAccounts(); }
-            else showToast(data.error, true);
-        }
-        async function deleteAccount(id) { if (!confirm('متأكد؟')) return; await noCacheFetch(`/api/accounts/${id}`, { method: 'DELETE' }); loadAccounts(); }
-        async function startAccount(id) { showToast('جاري التشغيل...'); await noCacheFetch(`/api/accounts/${id}/start`, { method: 'POST' }); setTimeout(loadAccounts, 2000); }
-        async function stopAccount(id) { await noCacheFetch(`/api/accounts/${id}/stop`, { method: 'POST' }); loadAccounts(); }
-        async function refreshAccount(id) {
-            showToast('🔄 جاري جلب المهام...');
-            const res = await noCacheFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
-            const data = await res.json();
-            if (data.success) { showToast(`✅ ${data.total} مهمة`); loadAccounts(); }
-            else showToast(data.error, true);
-        }
-        window.addEventListener('beforeunload', () => { if (refreshInterval) clearInterval(refreshInterval); });
-        checkAuth();
-    </script>
+    <div class="stats">
+      <div class="stat"><b id="sAll">0</b><span>حسابات</span></div>
+      <div class="stat"><b id="sRun">0</b><span>شغّالة الآن</span></div>
+      <div class="stat"><b id="sDone">0</b><span>مهام مكتملة</span></div>
+      <div class="stat"><b id="sErr">0</b><span>أخطاء</span></div>
+    </div>
+    <div class="add">
+      <input type="password" id="tokenInput" placeholder="الصق توكن الحساب هنا..." autocomplete="off" spellcheck="false" aria-label="توكن الحساب">
+      <input type="text" id="nameInput" placeholder="اسم (اختياري)" maxlength="40" aria-label="اسم الحساب">
+      <button class="primary" id="addBtn" onclick="addAccount()">إضافة</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="searchInput" placeholder="🔎 ابحث باسم الحساب..." aria-label="بحث">
+      <div class="chips" id="chips">
+        <button class="chip on" data-f="all">الكل</button>
+        <button class="chip" data-f="running">شغّال</button>
+        <button class="chip" data-f="done">خلص</button>
+        <button class="chip" data-f="idle">متوقف</button>
+        <button class="chip" data-f="error">خطأ</button>
+      </div>
+    </div>
+    <div id="accountsList" aria-live="off"></div>
+  </div>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<div id="modal" role="dialog" aria-modal="true"><div class="mbox"><p id="mMsg"></p><div class="row"><button class="ghost" id="mNo">إلغاء</button><button class="b-del" id="mOk" style="margin:0;background:#dc2626;color:#fff!important">تأكيد</button></div></div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let accounts = [], refreshInterval = null, filter = 'all', query = '', inflight = false, failures = 0, authed = false;
+const openSet = new Set(), busy = new Set(), cache = new Map();
+const ST = { running: '🟢 شغال', done: '✅ خلص', idle: '⚪ متوقف', error: '🔴 خطأ' };
+const QL = { done: '✅ مكتملة', running: '⏳ شغّالة', failed: '❌ فشلت', pending: '🕒 بانتظار', unsupported: '🚫 غير مدعومة' };
+const TYPES = { WATCH_VIDEO: '🎬 فيديو', WATCH_VIDEO_ON_MOBILE: '📱 فيديو موبايل', PLAY_ON_DESKTOP: '🎮 لعب', STREAM_ON_DESKTOP: '📺 بث', PLAY_ACTIVITY: '🕹 نشاط' };
+
+function showToast(msg, isError = false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+async function noCacheFetch(url, options = {}) {
+  return fetch(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now(), { ...options, cache: 'no-store', headers: { 'Cache-Control': 'no-cache', ...(options.headers || {}) } });
+}
+async function api(url, opt = {}) {
+  try {
+    const res = await noCacheFetch(url, opt);
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (res.status === 401 && !url.includes('/api/login')) onUnauth();
+    return { ok: res.ok, status: res.status, data: data || {} };
+  } catch (e) { return { ok: false, status: 0, data: { error: 'تعذّر الاتصال بالسيرفر' } }; }
+}
+const post = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+function onUnauth() {
+  if (!authed) return;
+  authed = false; clearTimeout(refreshInterval);
+  $('dashboardView').classList.add('hidden'); $('loginView').classList.remove('hidden');
+  showToast('انتهت الجلسة، سجّل الدخول من جديد', true);
+}
+async function login() {
+  const password = $('passwordInput').value;
+  if (!password) return;
+  const btn = $('loginBtn'); btn.disabled = true; $('loginError').textContent = '';
+  const r = await post('/api/login', { password });
+  btn.disabled = false;
+  if (r.data.success) { $('passwordInput').value = ''; showDashboard(); }
+  else $('loginError').textContent = r.data.error || 'تعذّر تسجيل الدخول';
+}
+async function logout() { await api('/api/logout', { method: 'POST' }); location.reload(); }
+async function checkAuth() { const r = await api('/api/check'); if (r.data.authenticated) showDashboard(); else $('passwordInput').focus(); }
+function showDashboard() {
+  authed = true;
+  $('loginView').classList.add('hidden'); $('dashboardView').classList.remove('hidden');
+  loadAccounts();
+}
+
+/* ---------- helpers ---------- */
+const stOf = a => { const s = String(a.liveStatus || a.status || 'IDLE').toLowerCase(); return ST[s] ? s : 'idle'; };
+const isRunning = a => stOf(a) === 'running';
+function qState(q) {
+  const s = String(q.status || '').toLowerCase();
+  if (['completed', 'claimed', 'already_completed'].includes(s)) return 'done';
+  if (s === 'running') return 'running';
+  if (['rejected', 'error', 'enroll_failed'].includes(s) || q.error) return 'failed';
+  if (s === 'unsupported') return 'unsupported';
+  return 'pending';
+}
+const pc = q => { const n = Number(q.percent); return isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0; };
+const qName = q => q.name || q.questName || q.id || q.questId || 'مهمة';
+function ago(iso) {
+  if (!iso) return 'لم يشتغل بعد';
+  const t = Date.parse(iso); if (isNaN(t)) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000 | 0);
+  if (s < 60) return 'آخر تشغيل: الآن';
+  const m = s / 60 | 0; if (m < 60) return 'آخر تشغيل: قبل ' + m + ' د';
+  const h = m / 60 | 0; if (h < 24) return 'آخر تشغيل: قبل ' + h + ' س';
+  return 'آخر تشغيل: قبل ' + (h / 24 | 0) + ' يوم';
+}
+
+/* ---------- data loading (adaptive polling) ---------- */
+function schedule() {
+  clearTimeout(refreshInterval);
+  if (!authed) return;
+  let d = document.hidden ? 30000 : accounts.some(isRunning) ? 3000 : 12000;
+  d = Math.min(d * Math.pow(2, Math.min(failures, 3)), 60000);
+  refreshInterval = setTimeout(loadAccounts, d);
+}
+function setConn(ok) {
+  $('conn').classList.toggle('off', !ok);
+  $('connTxt').textContent = ok ? 'متصل · ' + new Date().toLocaleTimeString('en-GB') : 'انقطع الاتصال، جاري إعادة المحاولة...';
+}
+async function loadAccounts() {
+  if (inflight || !authed) return;
+  inflight = true;
+  try {
+    const r = await api('/api/accounts');
+    if (r.ok && Array.isArray(r.data)) { accounts = r.data; failures = 0; setConn(true); renderAccounts(); }
+    else if (r.status !== 401) { failures++; setConn(false); }
+  } finally { inflight = false; schedule(); }
+}
+
+/* ---------- rendering ---------- */
+function questHTML(q) {
+  const s = qState(q), p = s === 'done' ? 100 : pc(q);
+  const type = q.type ? (TYPES[q.type] || esc(q.type)) : '';
+  const meta = [type, (p > 0 || s === 'running') ? p + '%' : ''].filter(Boolean).join(' · ');
+  return `<div class="q"><div class="q-top"><span class="q-name">${esc(qName(q))}</span><span class="badge q-${s}">${QL[s]}</span></div>`
+    + (meta ? `<div class="q-meta">${meta}</div>` : '')
+    + ((p > 0 || s === 'running') ? `<div class="bar"><i style="width:${p}%"></i></div>` : '')
+    + (q.error ? `<div class="q-err">${esc(q.error)}</div>` : '') + `</div>`;
+}
+function cardHTML(acc) {
+  const id = esc(acc.id), qs = Array.isArray(acc.quests) ? acc.quests : [], sc = stOf(acc);
+  const cnt = { done: 0, running: 0, failed: 0, pending: 0, unsupported: 0 };
+  qs.forEach(q => cnt[qState(q)]++);
+  const solvable = qs.length - cnt.unsupported, overall = solvable ? Math.round(cnt.done / solvable * 100) : 0;
+  const live = qs.find(q => qState(q) === 'running');
+  const dis = a => busy.has(a + ':' + acc.id) ? ' disabled aria-busy="true"' : '';
+  const open = openSet.has(String(acc.id));
+  return `<div class="row"><div style="min-width:0"><div class="name">${esc(acc.name || acc.id)}</div><div class="sub">${esc(ago(acc.lastRun))}</div></div><span class="badge ${sc}">${ST[sc]}</span></div>`
+    + (qs.length ? `<div class="bar" title="${overall}%"><i style="width:${overall}%"></i></div>` : '')
+    + (sc === 'running' && live ? `<div class="live">⏳ ${esc(qName(live))} · ${pc(live)}%</div>` : '')
+    + `<div class="chipsrow"><span>✅ ${cnt.done}</span><span>⏳ ${cnt.running}</span><span>🕒 ${cnt.pending}</span><span>❌ ${cnt.failed}</span>${cnt.unsupported ? `<span>🚫 ${cnt.unsupported}</span>` : ''}</div>`
+    + `<div class="acts">
+        <button class="b-start" data-act="start" data-id="${id}"${dis('start')}>▶ تشغيل</button>
+        <button class="b-stop" data-act="stop" data-id="${id}"${dis('stop')}>⏹ إيقاف</button>
+        <button class="b-refresh" data-act="refresh" data-id="${id}"${dis('refresh')}>🔄 تحديث</button>
+        <button class="b-det" data-act="details" data-id="${id}" aria-expanded="${open}" aria-label="تفاصيل المهام">📋 ${qs.length}</button>
+        <button class="b-del" data-act="delete" data-id="${id}"${dis('delete')} aria-label="حذف الحساب">🗑</button>
+      </div>`
+    + (open ? `<div class="details">${qs.length ? qs.map(questHTML).join('') : '<div style="color:var(--mut);padding:10px 0">ما في مهام. اضغط تحديث.</div>'}</div>` : '');
+}
+function renderStats() {
+  let done = 0;
+  accounts.forEach(a => (a.quests || []).forEach(q => { if (qState(q) === 'done') done++; }));
+  $('sAll').textContent = accounts.length;
+  $('sRun').textContent = accounts.filter(isRunning).length;
+  $('sDone').textContent = done;
+  $('sErr').textContent = accounts.filter(a => stOf(a) === 'error').length;
+}
+function renderAccounts() {
+  const c = $('accountsList');
+  renderStats();
+  const list = accounts.filter(a => (filter === 'all' || stOf(a) === filter) && (!query || String(a.name || '').toLowerCase().includes(query)));
+  if (!list.length) {
+    cache.clear();
+    c.innerHTML = '<div class="empty">' + (accounts.length ? 'ما في نتائج مطابقة' : 'ما في حسابات. أضف واحد فوق 👆') + '</div>';
+    return;
+  }
+  const ids = new Set(list.map(a => String(a.id)));
+  [...c.children].forEach(el => { if (!el.dataset.id || !ids.has(el.dataset.id)) { cache.delete(el.dataset.id); el.remove(); } });
+  let prev = null;
+  list.forEach(a => {
+    const id = String(a.id), html = cardHTML(a);
+    let el = [...c.children].find(x => x.dataset.id === id);
+    if (!el) { el = document.createElement('div'); el.dataset.id = id; }
+    el.className = 'card ' + stOf(a);
+    if (cache.get(id) !== html) {
+      const old = el.querySelector('.details'), top = old ? old.scrollTop : 0;
+      el.innerHTML = html; cache.set(id, html);
+      const nb = el.querySelector('.details'); if (nb && top) nb.scrollTop = top;
+    }
+    const want = prev ? prev.nextElementSibling : c.firstElementChild;
+    if (el !== want) c.insertBefore(el, want);
+    prev = el;
+  });
+}
+function rerender(id) { cache.delete(String(id)); renderAccounts(); }
+async function run(act, id, fn) {
+  const k = act + ':' + id; if (busy.has(k)) return;
+  busy.add(k); rerender(id);
+  try { return await fn(); } finally { busy.delete(k); rerender(id); }
+}
+function confirmBox(msg) {
+  return new Promise(res => {
+    const m = $('modal'); $('mMsg').textContent = msg; m.classList.add('show');
+    const done = v => { m.classList.remove('show'); m.onclick = $('mOk').onclick = $('mNo').onclick = null; res(v); };
+    $('mOk').onclick = () => done(true); $('mNo').onclick = () => done(false);
+    m.onclick = e => { if (e.target === m) done(false); };
+    $('mNo').focus();
+  });
+}
+
+/* ---------- actions ---------- */
+async function addAccount() {
+  const token = $('tokenInput').value.trim(), name = $('nameInput').value.trim();
+  if (!token) return showToast('الصق التوكن أول', true);
+  if (token.length < 20) return showToast('التوكن قصير، تأكد إنك نسخته كامل', true);
+  const btn = $('addBtn'); btn.disabled = true;
+  const r = await post('/api/accounts', { token, name });
+  btn.disabled = false;
+  if (r.data.success) { $('tokenInput').value = ''; $('nameInput').value = ''; showToast('✅ تمت إضافة: ' + (r.data.name || '')); loadAccounts(); }
+  else showToast(r.data.error || 'فشلت الإضافة', true);
+}
+async function deleteAccount(id) {
+  const a = accounts.find(x => String(x.id) === String(id));
+  if (!await confirmBox('حذف الحساب «' + ((a && a.name) || id) + '» نهائياً؟')) return;
+  return run('delete', id, async () => {
+    const r = await api(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (r.ok && r.data.success !== false) { openSet.delete(String(id)); accounts = accounts.filter(x => String(x.id) !== String(id)); showToast('🗑 تم الحذف'); }
+    else showToast(r.data.error || 'فشل الحذف', true);
+    loadAccounts();
+  });
+}
+async function startAccount(id) {
+  return run('start', id, async () => {
+    const r = await api(`/api/accounts/${encodeURIComponent(id)}/start`, { method: 'POST' });
+    if (r.ok && r.data.success !== false) showToast('▶ ' + (r.data.message || 'بدأ التشغيل'));
+    else showToast(r.data.error || r.data.message || 'فشل التشغيل', true);
+    setTimeout(loadAccounts, 1200);
+  });
+}
+async function stopAccount(id) {
+  return run('stop', id, async () => {
+    const r = await api(`/api/accounts/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+    if (r.data.success) showToast('⏹ ' + (r.data.message || 'تم الإيقاف'));
+    else showToast(r.data.error || r.data.message || 'ما قدرت أوقف', true);
+    loadAccounts();
+  });
+}
+async function refreshAccount(id) {
+  return run('refresh', id, async () => {
+    showToast('🔄 جاري جلب المهام...');
+    const r = await api(`/api/accounts/${encodeURIComponent(id)}/refresh`, { method: 'POST' });
+    if (r.data.success) {
+      const a = accounts.find(x => String(x.id) === String(id));
+      if (a && Array.isArray(r.data.quests)) a.quests = r.data.quests;
+      showToast(`✅ ${r.data.total} مهمة · ${r.data.valid} صالحة`);
+    } else showToast(r.data.error || 'فشل التحديث', true);
+    loadAccounts();
+  });
+}
+
+/* ---------- events ---------- */
+$('accountsList').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || b.disabled) return;
+  const id = b.dataset.id, act = b.dataset.act;
+  if (act === 'details') { openSet.has(id) ? openSet.delete(id) : openSet.add(id); rerender(id); return; }
+  ({ start: startAccount, stop: stopAccount, refresh: refreshAccount, delete: deleteAccount })[act](id);
+});
+$('chips').addEventListener('click', e => {
+  const b = e.target.closest('[data-f]'); if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll('#chips .chip').forEach(x => x.classList.toggle('on', x === b));
+  renderAccounts();
+});
+$('searchInput').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderAccounts(); });
+$('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+['tokenInput', 'nameInput'].forEach(i => $(i).addEventListener('keydown', e => { if (e.key === 'Enter') addAccount(); }));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('modal').classList.contains('show')) $('mNo').click(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && authed) loadAccounts(); });
+window.addEventListener('beforeunload', () => { if (refreshInterval) clearTimeout(refreshInterval); });
+checkAuth();
+</script>
 </body>
 </html>
