@@ -1,4 +1,4 @@
-// quests.js - محرك المهام مع Heartbeat يدوي وتشخيص كامل
+// quests.js - محرك المهام مع استخراج application_id من taskConfigV2
 const axios = require("axios");
 const crypto = require("crypto");
 let DiscordQuests = null;
@@ -45,57 +45,45 @@ function renderProgressBar(percent, width = 20) {
 
 const SUPPORTED_TYPES = ['WATCH_VIDEO', 'PLAY_ON_DESKTOP'];
 
-function normalizeType(quest) {
-    if (!quest) return 'UNKNOWN';
-    if (typeof quest.type === 'string') return quest.type;
-    if (Array.isArray(quest.tasks) && quest.tasks[0]?.id) return quest.tasks[0].id;
-    if (quest.tasks && typeof quest.tasks === 'object') {
-        const keys = Object.keys(quest.tasks);
-        if (keys.length) return keys[0];
+// ✅ استخراج اسم المهمة من taskConfigV2
+function extractTaskName(quest) {
+    // المسار الجديد (يوليو 2026)
+    const tcv2 = quest.config?.taskConfigV2 || quest.config?.task_config_v2;
+    if (tcv2?.tasks) {
+        const keys = Object.keys(tcv2.tasks);
+        // ابحث عن أول مهمة معروفة
+        for (const k of keys) {
+            if (SUPPORTED_TYPES.includes(k)) return k;
+        }
+        // لو ما لقيت، ارجع أول مفتاح
+        if (keys.length > 0) return keys[0];
+    }
+    // fallback: من المصفوفة
+    if (Array.isArray(quest.tasks) && quest.tasks[0]?.id) {
+        return quest.tasks[0].id;
     }
     return 'UNKNOWN';
 }
 
-// ✅ استخراج application_id من أماكن متعددة
-function extractApplicationId(quest) {
-    // محاولات متعددة
-    const paths = [
-        () => quest.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
-        () => quest.tasks?.PLAY_ON_DESKTOP?.application_id,
-        () => quest.config?.task_config_v2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
-        () => quest.config?.taskConfigV2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
-        () => quest.config?.application?.id,
-        () => quest.application?.id,
-        () => quest.application_id,
-        () => quest._raw?.config?.application?.id,
-        () => quest._raw?.config?.task_config_v2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
-    ];
-    for (const fn of paths) {
-        try {
-            const v = fn();
-            if (v) return v;
-        } catch (e) {}
+// ✅ استخراج application_id من taskConfigV2 (المسار الجديد)
+function extractApplicationId(quest, taskName) {
+    // المسار الجديد (يوليو 2026)
+    const tcv2 = quest.config?.taskConfigV2 || quest.config?.task_config_v2;
+    if (tcv2?.tasks?.[taskName]?.applications?.[0]?.id) {
+        return tcv2.tasks[taskName].applications[0].id;
     }
+    // fallback: المسار القديم
+    if (quest.config?.application?.id) return quest.config.application.id;
+    if (quest.application?.id) return quest.application.id;
     return null;
 }
 
 // ✅ استخراج مدة الفيديو بالثواني
-function extractVideoDurationSeconds(quest) {
-    const paths = [
-        () => quest.tasks?.WATCH_VIDEO?.videoDurationMs,
-        () => quest.tasks?.WATCH_VIDEO?.video_duration_ms,
-        () => quest.config?.task_config_v2?.tasks?.WATCH_VIDEO?.video_duration_ms,
-        () => quest.config?.taskConfigV2?.tasks?.WATCH_VIDEO?.video_duration_ms,
-        () => quest._raw?.config?.task_config_v2?.tasks?.WATCH_VIDEO?.video_duration_ms,
-    ];
-    for (const fn of paths) {
-        try {
-            const v = fn();
-            if (v && typeof v === 'number' && v > 0) {
-                return Math.round(v / 1000); // نحوّل لثواني
-            }
-        } catch (e) {}
-    }
+function extractVideoDurationSeconds(quest, taskName) {
+    const tcv2 = quest.config?.taskConfigV2 || quest.config?.task_config_v2;
+    const task = tcv2?.tasks?.[taskName];
+    if (task?.video_duration_ms) return Math.round(task.video_duration_ms / 1000);
+    if (task?.videoDurationMs) return Math.round(task.videoDurationMs / 1000);
     return 900; // 15 دقيقة افتراضي
 }
 
@@ -112,7 +100,7 @@ function toQuestShape(raw, extra = {}) {
     return {
         id: raw.id || raw.questId || extra.id || '',
         name: raw.name || raw.questName || extra.name || raw.id || 'مهمة',
-        type: normalizeType(raw) !== 'UNKNOWN' ? normalizeType(raw) : (extra.type || 'UNKNOWN'),
+        type: extractTaskName(raw) !== 'UNKNOWN' ? extractTaskName(raw) : (extra.type || 'UNKNOWN'),
         status: normalizeStatus(raw.status || extra.status),
         percent: typeof raw.percent === 'number' ? raw.percent : (extra.percent || 0),
         error: raw.error || extra.error || null,
@@ -143,11 +131,11 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         const statusList = await dq.getStatus();
         console.log(`📊 إجمالي المهام: ${statusList.length}\n`);
 
-        // ✅ طباعة بنية أول مهمة في كل تشغيل (للتشخيص)
+        // ✅ طباعة بنية أول مهمة (للتشخيص)
         if (statusList.length > 0) {
             console.log('═══════════════════════════════════════════════');
             console.log('🔍 بنية أول مهمة (للتشخيص):');
-            console.log(JSON.stringify(statusList[0], null, 2).slice(0, 2500));
+            console.log(JSON.stringify(statusList[0], null, 2).slice(0, 3000));
             console.log('═══════════════════════════════════════════════\n');
         }
 
@@ -158,7 +146,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         for (const s of statusList) {
             if (s.completed) { skippedDone.push(s); continue; }
             if (s.solvable === false) { skippedType.push(s); continue; }
-            const type = normalizeType(s);
+            const type = extractTaskName(s);
             if (SUPPORTED_TYPES.includes(type)) supported.push(s);
             else skippedType.push(s);
         }
@@ -168,8 +156,8 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         console.log(`⏭️ أنواع غير مدعومة: ${skippedType.length}\n`);
 
         const skippedResults = [
-            ...skippedDone.map(s => ({ id: s.id, name: s.name || s.id, type: normalizeType(s), status: 'COMPLETED', percent: 100, error: null })),
-            ...skippedType.map(s => ({ id: s.id, name: s.name || s.id, type: normalizeType(s), status: 'UNSUPPORTED', percent: 0, error: null })),
+            ...skippedDone.map(s => ({ id: s.id, name: s.name || s.id, type: extractTaskName(s), status: 'COMPLETED', percent: 100, error: null })),
+            ...skippedType.map(s => ({ id: s.id, name: s.name || s.id, type: extractTaskName(s), status: 'UNSUPPORTED', percent: 0, error: null })),
         ];
 
         if (supported.length === 0) {
@@ -187,10 +175,10 @@ async function solveSequentially(token, onUpdate, signal = {}) {
             const quest = supported[i];
             const questId = quest.id;
             const questName = quest.name || questId;
-            const questType = normalizeType(quest);
+            const taskName = extractTaskName(quest);
 
             console.log(`\n[${i + 1}/${supported.length}] ═══════════════════`);
-            console.log(`   📌 ${questName} (${questType})`);
+            console.log(`   📌 ${questName} (${taskName})`);
 
             if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent: 0 }));
 
@@ -209,9 +197,8 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                 const TIMEOUT_MS = 20 * 60 * 1000;
                 const startTime = Date.now();
 
-                if (questType === 'WATCH_VIDEO') {
-                    // ✅ timestamp بالثواني (وليس ms)
-                    const durationSec = extractVideoDurationSeconds(quest);
+                if (taskName === 'WATCH_VIDEO') {
+                    const durationSec = extractVideoDurationSeconds(quest, 'WATCH_VIDEO');
                     const intervalSec = 30;
                     const totalSteps = Math.ceil(durationSec / intervalSec);
                     console.log(`   🎬 مدة: ${Math.round(durationSec/60)} دقيقة | خطوات: ${totalSteps}`);
@@ -220,7 +207,6 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                         if (signal.stopped) throw new Error('تم الإيقاف يدوياً');
                         if (Date.now() - startTime > TIMEOUT_MS) throw new Error('تجاوز الوقت');
 
-                        // ✅ timestamp بالثواني
                         const timestampSec = Math.min(step * intervalSec, durationSec);
                         
                         try {
@@ -246,14 +232,11 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                         await sleep(intervalSec * 1000);
                     }
 
-                } else if (questType === 'PLAY_ON_DESKTOP') {
-                    // ✅ نستخرج application_id من مسارات متعددة
-                    const appId = extractApplicationId(quest);
+                } else if (taskName === 'PLAY_ON_DESKTOP') {
+                    const appId = extractApplicationId(quest, 'PLAY_ON_DESKTOP');
                     
                     if (!appId) {
-                        console.log(`   ❌ application_id غير موجود`);
-                        console.log(`   🔍 quest.tasks keys:`, Object.keys(quest.tasks || {}));
-                        console.log(`   🔍 quest.config keys:`, Object.keys(quest.config || {}));
+                        console.log(`   ❌ application_id غير موجود في taskConfigV2`);
                         throw new Error('application_id غير موجود');
                     }
 
@@ -330,7 +313,7 @@ async function fetchQuestsOnly(token) {
         const dq = new QuestsClass(token);
         const statusList = await dq.getStatus();
         const mapped = statusList.map(s => ({
-            id: s.id, name: s.name || s.id, type: normalizeType(s),
+            id: s.id, name: s.name || s.id, type: extractTaskName(s),
             status: s.completed ? 'COMPLETED' : (s.solvable === false ? 'UNSUPPORTED' : 'PENDING'),
             percent: s.completed ? 100 : 0, error: null,
         }));
@@ -341,4 +324,4 @@ async function fetchQuestsOnly(token) {
     }
 }
 
-module.exports = { solveSequentially, fetchQuestsOnly, toQuestShape, normalizeStatus, normalizeType };
+module.exports = { solveSequentially, fetchQuestsOnly, toQuestShape, normalizeStatus, extractTaskName };
