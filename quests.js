@@ -1,4 +1,6 @@
-// quests.js - محرك المهام مع فلترة صحيحة من getStatus()
+// quests.js - محرك المهام مع Heartbeat يدوي
+const axios = require("axios");
+const crypto = require("crypto");
 let DiscordQuests = null;
 
 async function loadQuestsLib() {
@@ -11,11 +13,40 @@ async function loadQuestsLib() {
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const DISCORD_API = "https://discord.com/api/v9";
+
+// ✅ توليد ترويسات أمنية كاملة (نفس ما تسويه المكتبة)
+function buildHeaders(token) {
+    const clientLaunchId = crypto.randomBytes(16).toString("hex");
+    const launchSignature = `${clientLaunchId}.345678.${crypto.randomBytes(8).toString("hex")}`;
+    const superProps = {
+        os: "Windows",
+        browser: "Discord Client",
+        release_channel: "stable",
+        client_version: "1.0.9174",
+        os_version: "10.0.19045",
+        os_arch: "x64",
+        system_locale: "en-US",
+        client_launch_id: clientLaunchId,
+        launch_signature: launchSignature,
+        client_heartbeat_session_id: crypto.randomBytes(16).toString("hex"),
+        x_installation_id: crypto.randomBytes(16).toString("hex"),
+    };
+    return {
+        Authorization: token,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9174 Chrome/120.0.0.0 Electron/28.0.0 Safari/537.36",
+        "X-Super-Properties": Buffer.from(JSON.stringify(superProps)).toString("base64"),
+        "X-Discord-Locale": "en-US",
+        "X-Discord-Timezone": "Asia/Riyadh",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://discord.com/quest-home",
+    };
+}
 
 function renderProgressBar(percent, width = 20) {
     const filled = Math.round((percent / 100) * width);
-    const empty = width - filled;
-    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percent}%`;
+    return `[${'█'.repeat(filled)}${'░'.repeat(width - filled)}] ${percent}%`;
 }
 
 const SUPPORTED_TYPES = ['WATCH_VIDEO', 'PLAY_ON_DESKTOP'];
@@ -51,10 +82,20 @@ function toQuestShape(raw, extra = {}) {
     };
 }
 
+// ✅ الحل اليدوي: نرسل heartbeat بأنفسنا
+async function sendHeartbeat(token, questId, applicationId) {
+    const headers = buildHeaders(token);
+    const body = { application_id: applicationId, terminal: false };
+    const res = await axios.post(
+        `${DISCORD_API}/quests/${questId}/heartbeat`,
+        body,
+        { headers, timeout: 20000 }
+    );
+    return res.data;
+}
+
 async function solveSequentially(token, onUpdate, signal = {}) {
     const results = [];
-    const solvers = [];
-    
     console.log('\n' + '='.repeat(50));
     console.log('🚀 Dark Orbs - بدء جلسة حل المهام');
     console.log('='.repeat(50) + '\n');
@@ -73,92 +114,46 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         }
 
         if (signal.stopped) return { success: false, error: 'stopped' };
-        
-        // ✅ نستخدم getStatus بدل fetchQuests - فيها completed و solvable جاهزين
-        console.log('🔍 جاري جلب حالة المهام...\n');
+
+        // ✅ نستخدم getStatus (فلترة صحيحة)
         const statusList = await dq.getStatus();
         console.log(`📊 إجمالي المهام: ${statusList.length}\n`);
 
-        // ✅ طباعة شكل أول مهمة للتشخيص (مرة وحدة)
-        if (statusList.length > 0 && !global._loggedStatus) {
-            global._loggedStatus = true;
-            console.log('🔍 بنية أول مهمة من getStatus:');
-            console.log(JSON.stringify(statusList[0], null, 2).slice(0, 1500));
-            console.log('');
-        }
-
-        // ✅ الفلترة تعتمد على المكتبة نفسها
+        // ✅ فلترة المهام
         const supported = [];
         const skippedDone = [];
         const skippedType = [];
-        
+
         for (const s of statusList) {
-            // المكتبة تعطينا: { id, name, tasks, completed, solvable, ... }
-            if (s.completed) {
-                skippedDone.push(s);
-                continue;
-            }
-            if (s.solvable === false) {
-                skippedType.push(s);
-                continue;
-            }
-            // ناخذ فقط الأنواع اللي نبغاها
+            if (s.completed) { skippedDone.push(s); continue; }
+            if (s.solvable === false) { skippedType.push(s); continue; }
             const type = normalizeType(s);
-            if (SUPPORTED_TYPES.includes(type)) {
-                supported.push(s);
-            } else {
-                skippedType.push(s);
-            }
-        }
-        
-        console.log(`✅ مهام قابلة للحل: ${supported.length}`);
-        console.log(`✔️ مكتملة/مستلمة: ${skippedDone.length}`);
-        console.log(`⏭️ أنواع غير مدعومة: ${skippedType.length}\n`);
-        
-        if (skippedDone.length > 0) {
-            console.log('✔️ المهام المكتملة/المستلمة:');
-            skippedDone.forEach((s, i) => {
-                console.log(`   ${i + 1}. ${s.name || s.id}`);
-            });
-            console.log('');
-        }
-        
-        if (skippedType.length > 0) {
-            console.log('⏭️ المهام المتخطاة (نوع):');
-            skippedType.forEach((s, i) => {
-                const type = normalizeType(s);
-                console.log(`   ${i + 1}. ${s.name || s.id} [${type}]`);
-            });
-            console.log('');
+            if (SUPPORTED_TYPES.includes(type)) supported.push(s);
+            else skippedType.push(s);
         }
 
-        // نبني نتائج المتخطاة للحفظ
+        console.log(`✅ مهام قابلة للحل: ${supported.length}`);
+        console.log(`✔️ مكتملة: ${skippedDone.length}`);
+        console.log(`⏭️ أنواع غير مدعومة: ${skippedType.length}\n`);
+
         const skippedResults = [
-            ...skippedDone.map(s => ({
-                id: s.id, name: s.name || s.id, type: normalizeType(s),
-                status: 'COMPLETED', percent: 100, error: null
-            })),
-            ...skippedType.map(s => ({
-                id: s.id, name: s.name || s.id, type: normalizeType(s),
-                status: 'UNSUPPORTED', percent: 0, error: null
-            })),
+            ...skippedDone.map(s => ({ id: s.id, name: s.name || s.id, type: normalizeType(s), status: 'COMPLETED', percent: 100, error: null })),
+            ...skippedType.map(s => ({ id: s.id, name: s.name || s.id, type: normalizeType(s), status: 'UNSUPPORTED', percent: 0, error: null })),
         ];
 
         if (supported.length === 0) {
-            console.log('ℹ️ لا توجد مهام قابلة للحل حالياً.');
+            console.log('ℹ️ لا توجد مهام قابلة للحل.');
             if (onUpdate) skippedResults.forEach(r => onUpdate(r));
             return { success: true, quests: skippedResults };
         }
 
         console.log('📋 قائمة المهام القابلة للحل:');
-        supported.forEach((q, i) => {
-            console.log(`   ${i + 1}. ${q.name || q.id} [${normalizeType(q)}]`);
-        });
+        supported.forEach((q, i) => console.log(`   ${i + 1}. ${q.name || q.id} [${normalizeType(q)}]`));
         console.log('');
 
         for (let i = 0; i < supported.length; i++) {
             if (signal.stopped) {
-                console.log(`\n⏹️ تم الإيقاف يدوياً عند المهمة ${i + 1}`);
+                console.log(`\n⏹️ تم الإيقاف عند المهمة ${i + 1}`);
                 break;
             }
 
@@ -173,66 +168,90 @@ async function solveSequentially(token, onUpdate, signal = {}) {
             if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent: 0 }));
 
             try {
-                let solver = null;
-                const TIMEOUT_MS = 20 * 60 * 1000;
-
-                // ✅ نمرر الـ quest الأصلي (المكتبة تحتاج الـ full object من getStatus)
-                if (typeof dq.createSolver === 'function') {
-                    solver = dq.createSolver(quest);
-                    solvers.push(solver);
-
-                    const solverPromise = solver.solve ? solver.solve() : solver.run ? solver.run() : solver;
-                    
-                    let lastPercent = 0;
-                    const progressInterval = setInterval(() => {
-                        if (signal.stopped && solver.stop) {
-                            try { solver.stop(); } catch (e) {}
-                            clearInterval(progressInterval);
-                            return;
-                        }
-                        if (solver.percent !== undefined) {
-                            const p = Math.min(100, Math.round(solver.percent));
-                            if (p !== lastPercent) {
-                                lastPercent = p;
-                                process.stdout.write(`\r   ${renderProgressBar(p)}`);
-                                if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent: p }));
-                            }
-                        }
-                    }, 2000);
-
-                    const result = await Promise.race([
-                        solverPromise,
-                        sleep(TIMEOUT_MS).then(() => ({ timeout: true })),
-                    ]);
-                    
-                    clearInterval(progressInterval);
-                    
-                    if (result && result.timeout) {
-                        if (solver.stop) try { solver.stop(); } catch (e) {}
-                        throw new Error(`تجاوز ${TIMEOUT_MS / 60000} دقيقة`);
-                    }
-
-                    const finalStatus = normalizeStatus(result?.status || 'completed');
-                    results.push(toQuestShape(quest, { status: finalStatus, percent: 100 }));
-                    if (onUpdate) onUpdate(toQuestShape(quest, { status: finalStatus, percent: 100 }));
-                    console.log(`\n   ${finalStatus === 'COMPLETED' ? '✅' : '❌'} ${questName}`);
-
-                } else if (typeof dq.solve === 'function') {
-                    const result = await Promise.race([
-                        dq.solve(quest),
-                        sleep(TIMEOUT_MS).then(() => ({ timeout: true })),
-                    ]);
-                    if (result?.timeout) throw new Error(`تجاوز ${TIMEOUT_MS / 60000} دقيقة`);
-                    
-                    const finalStatus = normalizeStatus(result?.status || 'completed');
-                    results.push(toQuestShape(quest, { status: finalStatus, percent: 100 }));
-                    if (onUpdate) onUpdate(toQuestShape(quest, { status: finalStatus, percent: 100 }));
-                    console.log(`\n   ✅ ${questName}`);
-                } else {
-                    throw new Error('لا توجد دالة حل مناسبة');
+                // ✅ محاولة Enroll أولاً
+                try {
+                    await axios.post(`${DISCORD_API}/quests/${questId}/enroll`, {}, {
+                        headers: buildHeaders(token), timeout: 15000
+                    });
+                    console.log(`   ✅ تم التسجيل`);
+                } catch (e) {
+                    if (e.response?.status === 400) console.log(`   ⚠️ مسجل مسبقاً`);
+                    else console.log(`   ⚠️ التسجيل: ${e.message}`);
                 }
 
-                if (i < supported.length - 1 && !signal.stopped) {
+                const TIMEOUT_MS = 20 * 60 * 1000;
+                const startTime = Date.now();
+
+                if (questType === 'WATCH_VIDEO') {
+                    // ✅ مهام الفيديو: نرسل video-progress يدوياً
+                    const durationMs = quest.tasks?.WATCH_VIDEO?.videoDurationMs || 900000;
+                    const intervalMs = 30000;
+                    const totalSteps = Math.ceil(durationMs / intervalMs);
+                    console.log(`   🎬 مدة: ${Math.round(durationMs / 60000)} دقيقة | خطوات: ${totalSteps}`);
+
+                    for (let step = 1; step <= totalSteps; step++) {
+                        if (signal.stopped) throw new Error('تم الإيقاف يدوياً');
+                        if (Date.now() - startTime > TIMEOUT_MS) throw new Error('تجاوز الوقت');
+
+                        const timestamp = Math.min(step * intervalMs, durationMs);
+                        try {
+                            await axios.post(`${DISCORD_API}/quests/${questId}/video-progress`,
+                                { timestamp },
+                                { headers: buildHeaders(token), timeout: 15000 });
+                        } catch (e) {
+                            if (e.response?.status === 429) {
+                                const retry = (e.response.data?.retry_after || 5) * 1000;
+                                console.log(`   ⏸️ Rate limit: ${retry}ms`);
+                                await sleep(retry);
+                                step--; continue;
+                            }
+                            throw new Error(`video-progress: ${e.response?.data?.message || e.message}`);
+                        }
+
+                        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
+                        process.stdout.write(`\r   ${renderProgressBar(percent)}`);
+                        if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent }));
+                        await sleep(intervalMs);
+                    }
+
+                } else if (questType === 'PLAY_ON_DESKTOP') {
+                    // ✅ مهام اللعب: نرسل heartbeat يدوياً
+                    const appId = quest.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id;
+                    if (!appId) throw new Error('application_id غير موجود');
+
+                    const durationMs = 900000;
+                    const intervalMs = 60000;
+                    const totalSteps = Math.ceil(durationMs / intervalMs);
+                    console.log(`   🎮 App: ${appId} | خطوات: ${totalSteps}`);
+
+                    for (let step = 1; step <= totalSteps; step++) {
+                        if (signal.stopped) throw new Error('تم الإيقاف يدوياً');
+                        if (Date.now() - startTime > TIMEOUT_MS) throw new Error('تجاوز الوقت');
+
+                        try {
+                            await sendHeartbeat(token, questId, appId);
+                        } catch (e) {
+                            if (e.response?.status === 429) {
+                                const retry = (e.response.data?.retry_after || 5) * 1000;
+                                console.log(`   ⏸️ Rate limit: ${retry}ms`);
+                                await sleep(retry);
+                                step--; continue;
+                            }
+                            throw new Error(`heartbeat: ${e.response?.data?.message || e.message}`);
+                        }
+
+                        const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
+                        process.stdout.write(`\r   ${renderProgressBar(percent)}`);
+                        if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent }));
+                        await sleep(intervalMs);
+                    }
+                }
+
+                results.push(toQuestShape(quest, { status: 'COMPLETED', percent: 100 }));
+                if (onUpdate) onUpdate(toQuestShape(quest, { status: 'COMPLETED', percent: 100 }));
+                console.log(`\n   ✅ اكتملت: ${questName}`);
+
+                if (i < supported.length - 1) {
                     const delay = 2000 + Math.random() * 3000;
                     console.log(`   ⏳ انتظار ${Math.round(delay / 1000)} ثانية...`);
                     await sleep(delay);
@@ -249,10 +268,9 @@ async function solveSequentially(token, onUpdate, signal = {}) {
 
         const succeeded = results.filter(r => r.status === 'COMPLETED').length;
         const failed = results.filter(r => r.status === 'REJECTED').length;
-        const stopped = signal.stopped ? ' (متوقف يدوياً)' : '';
 
         console.log('\n' + '='.repeat(50));
-        console.log(`🏁 انتهت الجلسة - نجح: ${succeeded}, فشل: ${failed}${stopped}`);
+        console.log(`🏁 انتهت - نجح: ${succeeded}, فشل: ${failed}`);
         console.log('='.repeat(50) + '\n');
 
         return { success: true, quests: [...results, ...skippedResults], stopped: signal.stopped };
@@ -267,22 +285,13 @@ async function fetchQuestsOnly(token) {
     try {
         const QuestsClass = await loadQuestsLib();
         const dq = new QuestsClass(token);
-
         const statusList = await dq.getStatus();
-        
         const mapped = statusList.map(s => ({
-            id: s.id,
-            name: s.name || s.id,
-            type: normalizeType(s),
+            id: s.id, name: s.name || s.id, type: normalizeType(s),
             status: s.completed ? 'COMPLETED' : (s.solvable === false ? 'UNSUPPORTED' : 'PENDING'),
-            percent: s.completed ? 100 : 0,
-            error: null,
+            percent: s.completed ? 100 : 0, error: null,
         }));
-
-        const valid = mapped.filter(q => 
-            q.status === 'PENDING' && SUPPORTED_TYPES.includes(q.type)
-        );
-
+        const valid = mapped.filter(q => q.status === 'PENDING' && SUPPORTED_TYPES.includes(q.type));
         return { success: true, allQuests: mapped, valid };
     } catch (err) {
         return { success: false, error: err.message };
