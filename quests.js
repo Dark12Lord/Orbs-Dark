@@ -1,4 +1,4 @@
-// quests.js - محرك المهام مع Heartbeat يدوي
+// quests.js - محرك المهام مع Heartbeat يدوي وتشخيص كامل
 const axios = require("axios");
 const crypto = require("crypto");
 let DiscordQuests = null;
@@ -15,19 +15,13 @@ async function loadQuestsLib() {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const DISCORD_API = "https://discord.com/api/v9";
 
-// ✅ توليد ترويسات أمنية كاملة (نفس ما تسويه المكتبة)
 function buildHeaders(token) {
     const clientLaunchId = crypto.randomBytes(16).toString("hex");
     const launchSignature = `${clientLaunchId}.345678.${crypto.randomBytes(8).toString("hex")}`;
     const superProps = {
-        os: "Windows",
-        browser: "Discord Client",
-        release_channel: "stable",
-        client_version: "1.0.9174",
-        os_version: "10.0.19045",
-        os_arch: "x64",
-        system_locale: "en-US",
-        client_launch_id: clientLaunchId,
+        os: "Windows", browser: "Discord Client", release_channel: "stable",
+        client_version: "1.0.9174", os_version: "10.0.19045", os_arch: "x64",
+        system_locale: "en-US", client_launch_id: clientLaunchId,
         launch_signature: launchSignature,
         client_heartbeat_session_id: crypto.randomBytes(16).toString("hex"),
         x_installation_id: crypto.randomBytes(16).toString("hex"),
@@ -62,6 +56,49 @@ function normalizeType(quest) {
     return 'UNKNOWN';
 }
 
+// ✅ استخراج application_id من أماكن متعددة
+function extractApplicationId(quest) {
+    // محاولات متعددة
+    const paths = [
+        () => quest.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
+        () => quest.tasks?.PLAY_ON_DESKTOP?.application_id,
+        () => quest.config?.task_config_v2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
+        () => quest.config?.taskConfigV2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
+        () => quest.config?.application?.id,
+        () => quest.application?.id,
+        () => quest.application_id,
+        () => quest._raw?.config?.application?.id,
+        () => quest._raw?.config?.task_config_v2?.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id,
+    ];
+    for (const fn of paths) {
+        try {
+            const v = fn();
+            if (v) return v;
+        } catch (e) {}
+    }
+    return null;
+}
+
+// ✅ استخراج مدة الفيديو بالثواني
+function extractVideoDurationSeconds(quest) {
+    const paths = [
+        () => quest.tasks?.WATCH_VIDEO?.videoDurationMs,
+        () => quest.tasks?.WATCH_VIDEO?.video_duration_ms,
+        () => quest.config?.task_config_v2?.tasks?.WATCH_VIDEO?.video_duration_ms,
+        () => quest.config?.taskConfigV2?.tasks?.WATCH_VIDEO?.video_duration_ms,
+        () => quest._raw?.config?.task_config_v2?.tasks?.WATCH_VIDEO?.video_duration_ms,
+    ];
+    for (const fn of paths) {
+        try {
+            const v = fn();
+            if (v && typeof v === 'number' && v > 0) {
+                return Math.round(v / 1000); // نحوّل لثواني
+            }
+        } catch (e) {}
+    }
+    return 900; // 15 دقيقة افتراضي
+}
+
 function normalizeStatus(status) {
     const s = String(status || '').toLowerCase();
     if (['completed', 'already_completed', 'claimed'].includes(s)) return 'COMPLETED';
@@ -80,18 +117,6 @@ function toQuestShape(raw, extra = {}) {
         percent: typeof raw.percent === 'number' ? raw.percent : (extra.percent || 0),
         error: raw.error || extra.error || null,
     };
-}
-
-// ✅ الحل اليدوي: نرسل heartbeat بأنفسنا
-async function sendHeartbeat(token, questId, applicationId) {
-    const headers = buildHeaders(token);
-    const body = { application_id: applicationId, terminal: false };
-    const res = await axios.post(
-        `${DISCORD_API}/quests/${questId}/heartbeat`,
-        body,
-        { headers, timeout: 20000 }
-    );
-    return res.data;
 }
 
 async function solveSequentially(token, onUpdate, signal = {}) {
@@ -115,11 +140,17 @@ async function solveSequentially(token, onUpdate, signal = {}) {
 
         if (signal.stopped) return { success: false, error: 'stopped' };
 
-        // ✅ نستخدم getStatus (فلترة صحيحة)
         const statusList = await dq.getStatus();
         console.log(`📊 إجمالي المهام: ${statusList.length}\n`);
 
-        // ✅ فلترة المهام
+        // ✅ طباعة بنية أول مهمة في كل تشغيل (للتشخيص)
+        if (statusList.length > 0) {
+            console.log('═══════════════════════════════════════════════');
+            console.log('🔍 بنية أول مهمة (للتشخيص):');
+            console.log(JSON.stringify(statusList[0], null, 2).slice(0, 2500));
+            console.log('═══════════════════════════════════════════════\n');
+        }
+
         const supported = [];
         const skippedDone = [];
         const skippedType = [];
@@ -147,10 +178,6 @@ async function solveSequentially(token, onUpdate, signal = {}) {
             return { success: true, quests: skippedResults };
         }
 
-        console.log('📋 قائمة المهام القابلة للحل:');
-        supported.forEach((q, i) => console.log(`   ${i + 1}. ${q.name || q.id} [${normalizeType(q)}]`));
-        console.log('');
-
         for (let i = 0; i < supported.length; i++) {
             if (signal.stopped) {
                 console.log(`\n⏹️ تم الإيقاف عند المهمة ${i + 1}`);
@@ -168,7 +195,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
             if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent: 0 }));
 
             try {
-                // ✅ محاولة Enroll أولاً
+                // Enroll أولاً
                 try {
                     await axios.post(`${DISCORD_API}/quests/${questId}/enroll`, {}, {
                         headers: buildHeaders(token), timeout: 15000
@@ -176,52 +203,63 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                     console.log(`   ✅ تم التسجيل`);
                 } catch (e) {
                     if (e.response?.status === 400) console.log(`   ⚠️ مسجل مسبقاً`);
-                    else console.log(`   ⚠️ التسجيل: ${e.message}`);
+                    else console.log(`   ⚠️ التسجيل: ${e.response?.status} ${e.message}`);
                 }
 
                 const TIMEOUT_MS = 20 * 60 * 1000;
                 const startTime = Date.now();
 
                 if (questType === 'WATCH_VIDEO') {
-                    // ✅ مهام الفيديو: نرسل video-progress يدوياً
-                    const durationMs = quest.tasks?.WATCH_VIDEO?.videoDurationMs || 900000;
-                    const intervalMs = 30000;
-                    const totalSteps = Math.ceil(durationMs / intervalMs);
-                    console.log(`   🎬 مدة: ${Math.round(durationMs / 60000)} دقيقة | خطوات: ${totalSteps}`);
+                    // ✅ timestamp بالثواني (وليس ms)
+                    const durationSec = extractVideoDurationSeconds(quest);
+                    const intervalSec = 30;
+                    const totalSteps = Math.ceil(durationSec / intervalSec);
+                    console.log(`   🎬 مدة: ${Math.round(durationSec/60)} دقيقة | خطوات: ${totalSteps}`);
 
                     for (let step = 1; step <= totalSteps; step++) {
                         if (signal.stopped) throw new Error('تم الإيقاف يدوياً');
                         if (Date.now() - startTime > TIMEOUT_MS) throw new Error('تجاوز الوقت');
 
-                        const timestamp = Math.min(step * intervalMs, durationMs);
+                        // ✅ timestamp بالثواني
+                        const timestampSec = Math.min(step * intervalSec, durationSec);
+                        
                         try {
                             await axios.post(`${DISCORD_API}/quests/${questId}/video-progress`,
-                                { timestamp },
+                                { timestamp: timestampSec },
                                 { headers: buildHeaders(token), timeout: 15000 });
                         } catch (e) {
-                            if (e.response?.status === 429) {
+                            const status = e.response?.status;
+                            const msg = e.response?.data?.message || e.message;
+                            
+                            if (status === 429) {
                                 const retry = (e.response.data?.retry_after || 5) * 1000;
                                 console.log(`   ⏸️ Rate limit: ${retry}ms`);
                                 await sleep(retry);
                                 step--; continue;
                             }
-                            throw new Error(`video-progress: ${e.response?.data?.message || e.message}`);
+                            throw new Error(`video-progress [${status}]: ${msg} (timestamp=${timestampSec}s)`);
                         }
 
                         const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent }));
-                        await sleep(intervalMs);
+                        await sleep(intervalSec * 1000);
                     }
 
                 } else if (questType === 'PLAY_ON_DESKTOP') {
-                    // ✅ مهام اللعب: نرسل heartbeat يدوياً
-                    const appId = quest.tasks?.PLAY_ON_DESKTOP?.applications?.[0]?.id;
-                    if (!appId) throw new Error('application_id غير موجود');
+                    // ✅ نستخرج application_id من مسارات متعددة
+                    const appId = extractApplicationId(quest);
+                    
+                    if (!appId) {
+                        console.log(`   ❌ application_id غير موجود`);
+                        console.log(`   🔍 quest.tasks keys:`, Object.keys(quest.tasks || {}));
+                        console.log(`   🔍 quest.config keys:`, Object.keys(quest.config || {}));
+                        throw new Error('application_id غير موجود');
+                    }
 
-                    const durationMs = 900000;
-                    const intervalMs = 60000;
-                    const totalSteps = Math.ceil(durationMs / intervalMs);
+                    const durationSec = 900;
+                    const intervalSec = 60;
+                    const totalSteps = Math.ceil(durationSec / intervalSec);
                     console.log(`   🎮 App: ${appId} | خطوات: ${totalSteps}`);
 
                     for (let step = 1; step <= totalSteps; step++) {
@@ -229,21 +267,26 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                         if (Date.now() - startTime > TIMEOUT_MS) throw new Error('تجاوز الوقت');
 
                         try {
-                            await sendHeartbeat(token, questId, appId);
+                            await axios.post(`${DISCORD_API}/quests/${questId}/heartbeat`,
+                                { application_id: appId, terminal: false },
+                                { headers: buildHeaders(token), timeout: 20000 });
                         } catch (e) {
-                            if (e.response?.status === 429) {
+                            const status = e.response?.status;
+                            const msg = e.response?.data?.message || e.message;
+
+                            if (status === 429) {
                                 const retry = (e.response.data?.retry_after || 5) * 1000;
                                 console.log(`   ⏸️ Rate limit: ${retry}ms`);
                                 await sleep(retry);
                                 step--; continue;
                             }
-                            throw new Error(`heartbeat: ${e.response?.data?.message || e.message}`);
+                            throw new Error(`heartbeat [${status}]: ${msg}`);
                         }
 
                         const percent = Math.min(Math.round((step / totalSteps) * 100), 100);
                         process.stdout.write(`\r   ${renderProgressBar(percent)}`);
                         if (onUpdate) onUpdate(toQuestShape(quest, { status: 'running', percent }));
-                        await sleep(intervalMs);
+                        await sleep(intervalSec * 1000);
                     }
                 }
 
@@ -253,7 +296,7 @@ async function solveSequentially(token, onUpdate, signal = {}) {
 
                 if (i < supported.length - 1) {
                     const delay = 2000 + Math.random() * 3000;
-                    console.log(`   ⏳ انتظار ${Math.round(delay / 1000)} ثانية...`);
+                    console.log(`   ⏳ انتظار ${Math.round(delay/1000)} ثانية...`);
                     await sleep(delay);
                 }
 
