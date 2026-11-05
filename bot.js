@@ -1,5 +1,5 @@
 const database = require('./database');
-const { solveSequentially, toQuestShape } = require('./quests');
+const { solveSequentially } = require('./quests');
 
 class QuestBot {
     constructor(accountId) {
@@ -7,7 +7,7 @@ class QuestBot {
         this.running = false;
         this.status = 'IDLE';
         this.currentQuests = [];
-        this.signal = { stopped: false };  // ✅ إشارة الإيقاف الحقيقية
+        this.signal = { stopped: false };
         this.startedAt = null;
     }
 
@@ -25,35 +25,34 @@ class QuestBot {
         this.startedAt = new Date().toISOString();
         this.currentQuests = [];
 
-        // حافظ على المهام السابقة إن وجدت (C5)
-        const previousQuests = (account.quests || []).filter(q => 
+        const previousQuests = (account.quests || []).filter(q =>
             q.status === 'COMPLETED' || q.status === 'CLAIMED'
         );
 
         await database.updateAccount(this.accountId, { status: 'RUNNING' });
+        await database.saveRunState(this.accountId, {
+            status: 'RUNNING',
+            started_at: this.startedAt,
+        });
 
         try {
             const result = await solveSequentially(
                 account.token,
                 async (update) => {
-                    // دمج المهام الجديدة مع القديمة
                     const existing = this.currentQuests.find(q => q.id === update.id);
                     if (existing) {
                         Object.assign(existing, update);
                     } else {
                         this.currentQuests.push(update);
                     }
-                    // ادمج المهام المكتملة سابقاً
                     const merged = [...previousQuests, ...this.currentQuests];
-                    // إزالة التكرار
                     const unique = Array.from(new Map(merged.map(q => [q.id, q])).values());
                     await database.updateQuests(this.accountId, unique);
                     if (onUpdate) onUpdate(update);
                 },
-                this.signal  // ✅ نمرر الإشارة
+                this.signal
             );
 
-            // ✅ C4: افحص success
             if (!result.success) {
                 this.running = false;
                 this.status = 'ERROR';
@@ -61,19 +60,16 @@ class QuestBot {
                     status: 'ERROR',
                     lastRun: this.startedAt,
                 });
-                // لا تمسح المهام الموجودة
                 console.log(`[bot] ❌ فشل التشغيل: ${result.error}`);
                 return { success: false, error: result.error };
             }
 
-            // ادمج النتائج النهائية مع السابقة
             const finalQuests = [...previousQuests, ...(result.quests || [])];
             const uniqueQuests = Array.from(new Map(finalQuests.map(q => [q.id, q])).values());
 
             await database.updateQuests(this.accountId, uniqueQuests);
 
             this.running = false;
-            // ✅ C6: لا تكتب DONE لو تم الإيقاف يدوياً
             this.status = result.stopped ? 'IDLE' : 'DONE';
             await database.updateAccount(this.accountId, {
                 status: this.status,
@@ -92,10 +88,13 @@ class QuestBot {
             await database.updateAccount(this.accountId, { status: 'ERROR' });
             console.error(`[bot] ❌ خطأ: ${err.message}`);
             return { success: false, error: err.message };
+        } finally {
+            await database.clearRunState(this.accountId).catch(e =>
+                console.warn(`[bot] ⚠️ clearRunState: ${e.message}`)
+            );
         }
     }
 
-    // ✅ C6: إيقاف حقيقي
     stop() {
         if (!this.running) {
             return { success: false, error: 'البوت مو شغال' };

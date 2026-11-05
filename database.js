@@ -9,7 +9,11 @@ function initSupabase() {
     if (supabase !== null) return supabase;
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_KEY;
-    if (!url || !key) { console.log('[db] ⚠️ Supabase غير مهيأ'); supabase = false; return false; }
+    if (!url || !key) {
+        console.log('[db] ⚠️ Supabase غير مهيأ، سنستخدم data.json');
+        supabase = false;
+        return false;
+    }
     try {
         const { createClient } = require('@supabase/supabase-js');
         supabase = createClient(url, key);
@@ -68,8 +72,14 @@ function decrypt(encryptedText) {
 }
 
 function loadJSON() {
-    if (!fs.existsSync(config.dataFile)) return { accounts: [] };
-    try { return JSON.parse(fs.readFileSync(config.dataFile, "utf8")); } catch (e) { return { accounts: [] }; }
+    if (!fs.existsSync(config.dataFile)) return { accounts: [], active_runs: {} };
+    try {
+        const parsed = JSON.parse(fs.readFileSync(config.dataFile, "utf8"));
+        if (!parsed.active_runs) parsed.active_runs = {};
+        return parsed;
+    } catch (e) {
+        return { accounts: [], active_runs: {} };
+    }
 }
 function saveJSON(data) { fs.writeFileSync(config.dataFile, JSON.stringify(data, null, 2), "utf8"); }
 
@@ -79,7 +89,9 @@ async function fetchUsername(token) {
             headers: { Authorization: token, "User-Agent": "Mozilla/5.0" }, timeout: 10000,
         });
         return res.data.username || res.data.global_name || null;
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
 
 async function addAccount(token, name) {
@@ -137,7 +149,10 @@ async function getAllAccounts() {
     let accounts;
     if (sb) {
         const { data, error } = await supabaseWithRetry(async () => await sb.from('accounts').select('*').order('created_at', { ascending: true }), 3, 'getAllAccounts');
-        if (error) { console.error('[db] getAllAccounts error:', error.message); return []; }
+        if (error) {
+            console.error('[db] getAllAccounts error:', error.message);
+            return [];
+        }
         accounts = data || [];
     } else {
         accounts = loadJSON().accounts;
@@ -147,7 +162,10 @@ async function getAllAccounts() {
 
 async function updateAccount(id, updates) {
     const dbUpdates = { ...updates };
-    if (updates.lastRun !== undefined) { dbUpdates.last_run = updates.lastRun; delete dbUpdates.lastRun; }
+    if (updates.lastRun !== undefined) {
+        dbUpdates.last_run = updates.lastRun;
+        delete dbUpdates.lastRun;
+    }
     const sb = initSupabase();
     if (sb) {
         const { error } = await supabaseWithRetry(async () => await sb.from('accounts').update(dbUpdates).eq('id', id), 3, 'updateAccount');
@@ -166,4 +184,68 @@ async function updateQuests(id, quests) {
     return updateAccount(id, { quests, lastRun: new Date().toISOString() });
 }
 
-module.exports = { addAccount, removeAccount, getAccount, getAllAccounts, updateAccount, updateQuests };
+// ============ تتبع حالة التشغيل (active_runs) ============
+
+async function saveRunState(accountId, state) {
+    const now = new Date().toISOString();
+    const sb = initSupabase();
+    if (sb) {
+        const { error } = await supabaseWithRetry(async () =>
+            sb.from('active_runs').upsert({
+                account_id: accountId,
+                status: state.status || 'RUNNING',
+                started_at: state.started_at || now,
+                updated_at: now,
+            }, { onConflict: 'account_id' }), 3, 'saveRunState');
+        if (error) console.warn(`[db] ⚠️ saveRunState: ${error.message}`);
+    } else {
+        const data = loadJSON();
+        data.active_runs = data.active_runs || {};
+        data.active_runs[accountId] = {
+            status: state.status || 'RUNNING',
+            started_at: state.started_at || now,
+            updated_at: now,
+        };
+        saveJSON(data);
+    }
+}
+
+async function clearRunState(accountId) {
+    const sb = initSupabase();
+    if (sb) {
+        const { error } = await supabaseWithRetry(async () =>
+            sb.from('active_runs').delete().eq('account_id', accountId), 3, 'clearRunState');
+        if (error) console.warn(`[db] ⚠️ clearRunState: ${error.message}`);
+    } else {
+        const data = loadJSON();
+        if (data.active_runs) delete data.active_runs[accountId];
+        saveJSON(data);
+    }
+}
+
+async function getStaleRuns() {
+    const sb = initSupabase();
+    if (sb) {
+        const { data, error } = await supabaseWithRetry(async () =>
+            sb.from('active_runs').select('*'), 3, 'getStaleRuns');
+        if (error) {
+            console.warn(`[db] ⚠️ getStaleRuns: ${error.message}`);
+            return [];
+        }
+        return data || [];
+    }
+    const data = loadJSON();
+    return Object.entries(data.active_runs || {}).map(([id, s]) => ({ account_id: id, ...s }));
+}
+
+module.exports = {
+    addAccount,
+    removeAccount,
+    getAccount,
+    getAllAccounts,
+    updateAccount,
+    updateQuests,
+    saveRunState,
+    clearRunState,
+    getStaleRuns,
+};

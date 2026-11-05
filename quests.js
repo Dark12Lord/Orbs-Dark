@@ -1,13 +1,13 @@
-// quests.js - محرك Discord Quests المباشر لـ Orbs-Dark
-// مبني على منطق API المباشر المستخدم في xdluru/discord-auto-quest
-// مع مراعاة تغييرات taskConfigV2 الحديثة، بدون الاعتماد على discord-quests.
+// quests.js - محرك Discord Quests المباشر
+// مع دعم البروكسي عبر proxy.js (تدوير تلقائي)
+// مع تحديث دوري لبصمة X-Super-Properties
 
 const crypto = require('crypto');
+const axios = require('axios');
+const { getProxyAgent, PROXIES } = require('./proxy');
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
-// Orbs-Dark يدعم هذين النوعين فقط حاليًا.
-// WATCH_VIDEO_ON_MOBILE يبقى متجاهلًا عمدًا.
 const SUPPORTED_TYPES = ['PLAY_ON_DESKTOP', 'WATCH_VIDEO'];
 const TASK_PRIORITY = ['PLAY_ON_DESKTOP', 'WATCH_VIDEO'];
 
@@ -40,7 +40,6 @@ function makeError(message, details = {}) {
 }
 
 function buildSuperProperties() {
-    // نفس مجموعة البيانات الأساسية التي يستخدمها xdluru حاليًا.
     const userAgent =
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) discord/1.0.9215 Chrome/138.0.7204.251 ' +
@@ -89,42 +88,72 @@ function buildHeaders(token) {
 
 class DiscordQuestClient {
     constructor(token) {
+        this.token = token;
         this.headers = buildHeaders(token);
+        this._lastHeaderRefresh = Date.now();
+        this._agent = getProxyAgent();
+        this._proxyRotations = 0;
+    }
+
+    _refreshHeadersIfNeeded() {
+        if (Date.now() - this._lastHeaderRefresh > 10 * 60 * 1000) {
+            this.headers = buildHeaders(this.token);
+            this._lastHeaderRefresh = Date.now();
+        }
+    }
+
+    _rotateProxy() {
+        if (PROXIES.length <= 1) return false;
+        if (this._proxyRotations >= 3) return false;
+        this._agent = getProxyAgent();
+        this._proxyRotations++;
+        console.log(`[proxy] 🔄 تدوير بروكسي (${this._proxyRotations}/3) بعد خطأ شبكة`);
+        return true;
     }
 
     async request(method, path, body = undefined) {
         let lastError = null;
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            this._refreshHeadersIfNeeded();
+
+            const axiosConfig = {
+                method,
+                url: `${DISCORD_API}${path}`,
+                headers: this.headers,
+                data: body,
+                timeout: REQUEST_TIMEOUT_MS,
+                validateStatus: () => true,
+                responseType: 'text',
+            };
+
+            if (this._agent) {
+                axiosConfig.httpsAgent = this._agent;
+                axiosConfig.httpAgent = this._agent;
+            }
 
             try {
-                const response = await fetch(`${DISCORD_API}${path}`, {
-                    method,
-                    headers: this.headers,
-                    body: body === undefined ? undefined : JSON.stringify(body),
-                    signal: controller.signal,
-                });
+                const response = await axios(axiosConfig);
 
-                const text = await response.text();
                 let data = {};
-                if (text) {
+                const rawText = typeof response.data === 'string' ? response.data : '';
+                if (rawText) {
                     try {
-                        data = JSON.parse(text);
+                        data = JSON.parse(rawText);
                     } catch {
-                        data = { raw: text };
+                        data = { raw: rawText };
                     }
                 }
 
+                this._proxyRotations = 0;
+
                 if (response.status === 429) {
-                    const retryAfter = Number(data?.retry_after || response.headers.get('retry-after') || 5);
+                    const retryAfter = Number(data?.retry_after || response.headers['retry-after'] || 5);
                     lastError = makeError(`Rate limited: ${retryAfter}s`, {
                         status: 429,
                         retryAfter,
                         responseData: data,
                     });
-                    clearTimeout(timeout);
                     await sleep((retryAfter * 1000) + 500);
                     continue;
                 }
@@ -134,41 +163,36 @@ class DiscordQuestClient {
                         status: response.status,
                         responseData: data,
                     });
-                    clearTimeout(timeout);
                     if (attempt < MAX_RETRIES - 1) await sleep(1000 * (attempt + 1));
                     continue;
                 }
 
-                if (!response.ok) {
-                    clearTimeout(timeout);
+                if (response.status < 200 || response.status >= 300) {
                     throw makeError(
-                        `${method} ${path} -> HTTP ${response.status}: ${extractDiscordError(data, text)}`,
-                        {
-                            status: response.status,
-                            responseData: data,
-                        },
+                        `${method} ${path} -> HTTP ${response.status}: ${extractDiscordError(data, rawText)}`,
+                        { status: response.status, responseData: data }
                     );
                 }
 
-                clearTimeout(timeout);
                 return data;
             } catch (err) {
-                clearTimeout(timeout);
-
                 if (err?.status === 429 || (err?.status >= 500 && err?.status < 600)) {
                     lastError = err;
                     continue;
                 }
 
-                if (err?.name === 'AbortError') {
-                    lastError = makeError(`${method} ${path} -> Timeout`, { status: 0 });
+                const isNetworkError =
+                    err.code === 'ECONNABORTED' ||
+                    err.code === 'ETIMEDOUT' ||
+                    err.code === 'ECONNREFUSED' ||
+                    err.code === 'ENOTFOUND' ||
+                    err.code === 'ECONNRESET' ||
+                    (err.request && !err.response);
+
+                if (isNetworkError) {
+                    lastError = makeError(`${method} ${path} -> Network: ${err.message}`, { status: 0 });
                     if (attempt < MAX_RETRIES - 1) {
-                        await sleep(1000 * (attempt + 1));
-                        continue;
-                    }
-                } else if (err instanceof TypeError) {
-                    lastError = makeError(`${method} ${path} -> Network error: ${err.message}`, { status: 0 });
-                    if (attempt < MAX_RETRIES - 1) {
+                        this._rotateProxy();
                         await sleep(1000 * (attempt + 1));
                         continue;
                     }
@@ -196,12 +220,9 @@ class DiscordQuestClient {
             is_targeted: false,
             metadata_raw: null,
         };
-
-        // Discord قد يعيد هذه الحقول لبعض أنواع الـquests.
         for (const key of ['traffic_metadata_raw', 'traffic_metadata_sealed']) {
             if (quest?.[key] != null) body[key] = quest[key];
         }
-
         const data = await this.request('POST', `/quests/${quest.id}/enroll`, body);
         return data?.user_status || data;
     }
@@ -238,11 +259,8 @@ function taskEntries(tasks) {
 
 function selectTaskConfig(quest) {
     const config = quest?.config || {};
-
-    // Discord الحالي: task_config_v2 هو المرجع الأساسي عند وجود tasks فيه.
     const v2 = config.task_config_v2 || config.taskConfigV2;
     const legacy = config.task_config || config.taskConfig;
-
     if (taskEntries(v2?.tasks).length > 0) return v2;
     if (taskEntries(legacy?.tasks).length > 0) return legacy;
     return v2 || legacy || null;
@@ -254,26 +272,18 @@ function getTaskMap(quest) {
 
 function extractTaskName(quest) {
     const tasks = getTaskMap(quest);
-
     for (const taskName of TASK_PRIORITY) {
         if (tasks?.[taskName]) return taskName;
     }
-
-    // لا نعتبر WATCH_VIDEO_ON_MOBILE مدعومة، لكن نعيد اسمها لغرض العرض فقط.
     if (tasks?.WATCH_VIDEO_ON_MOBILE) return 'WATCH_VIDEO_ON_MOBILE';
-
     const keys = taskEntries(tasks).map(([key]) => key);
     return keys[0] || 'UNKNOWN';
 }
 
 function extractApplicationId(quest, taskName = extractTaskName(quest)) {
     const task = getTaskMap(quest)?.[taskName] || {};
-
-    // Discord الحالي: application id داخل taskConfigV2.tasks.<TASK>.applications[].id
     const appId = task?.applications?.find(app => app?.id)?.id;
     if (appId) return String(appId);
-
-    // Fallback للنسخ القديمة من payload.
     const legacy = quest?.config?.application?.id;
     return legacy ? String(legacy) : null;
 }
@@ -282,12 +292,10 @@ function extractTaskTarget(quest, taskName = extractTaskName(quest)) {
     const task = getTaskMap(quest)?.[taskName] || {};
     const direct = Number(task.target);
     if (Number.isFinite(direct) && direct > 0) return direct;
-
     const milliseconds = Number(task.video_duration_ms);
     if (Number.isFinite(milliseconds) && milliseconds > 0) {
         return Math.max(1, Math.round(milliseconds / 1000));
     }
-
     return taskName === 'WATCH_VIDEO' ? 60 : 900;
 }
 
@@ -356,25 +364,21 @@ function isNotStarted(quest) {
 function getTaskProgress(quest, taskName) {
     const status = getUserStatus(quest);
     const progress = status.progress || {};
-
     const candidates = [taskName, 'PLAY_ON_DESKTOP', 'WATCH_VIDEO'];
     for (const key of candidates) {
         const value = Number(progress?.[key]?.value);
         if (Number.isFinite(value) && value >= 0) return value;
     }
-
     return 0;
 }
 
 function getProgressFromStatus(status, taskName) {
     const progress = status?.progress || {};
     const candidates = [taskName, 'PLAY_ON_DESKTOP', 'WATCH_VIDEO'];
-
     for (const key of candidates) {
         const value = Number(progress?.[key]?.value);
         if (Number.isFinite(value) && value >= 0) return value;
     }
-
     return null;
 }
 
@@ -394,7 +398,6 @@ function normalizeStatus(status) {
 function toQuestShape(quest, extra = {}) {
     const type = extra.type || extractTaskName(quest);
     let percent = typeof extra.percent === 'number' ? extra.percent : 0;
-
     if (typeof quest?.percent === 'number') percent = quest.percent;
 
     const target = extractTaskTarget(quest, type);
@@ -446,7 +449,6 @@ async function completeWatchVideo(client, quest, taskName, onUpdate, signal) {
     const started = Date.now();
 
     if (!enrolledAt) {
-        // نعيد الجلب مرة واحدة، لأن enroll قد يحدث قبل دخول هنا.
         const fresh = await refreshQuest(client, questId);
         if (fresh) {
             quest = fresh;
@@ -488,7 +490,6 @@ async function completeWatchVideo(client, quest, taskName, onUpdate, signal) {
             if (serverProgress !== null) {
                 progress = Math.max(progress, serverProgress);
             } else {
-                // الرد غير المتوقع لا نعتبره نجاحًا.
                 progress = Math.max(progress, Math.min(nextTimestamp, maxAllowed));
             }
         }
@@ -516,7 +517,7 @@ async function completePlayOnDesktop(client, quest, taskName, onUpdate, signal) 
     const target = extractTaskTarget(quest, taskName);
     const appId = extractApplicationId(quest, taskName);
 
-    if (!appId) throw new Error('application_id غير موجود في taskConfigV2/التكوين القديم');
+    if (!appId) throw new Error('application_id غير موجود');
 
     let progress = getTaskProgress(quest, taskName);
     let completed = isQuestDone(quest);
@@ -556,7 +557,7 @@ async function completePlayOnDesktop(client, quest, taskName, onUpdate, signal) 
 
         if (completed || progress >= target) break;
         if (noProgressCount >= MAX_NO_PROGRESS_HEARTBEATS) {
-            throw new Error('Discord لم يمنح أي تقدم بعد عدة heartbeats؛ تم إيقاف المهمة بدل إعلان نجاح وهمي');
+            throw new Error('Discord لم يمنح أي تقدم بعد عدة heartbeats');
         }
 
         await sleepWithSignal(HEARTBEAT_INTERVAL_MS, signal);
@@ -569,7 +570,6 @@ async function completePlayOnDesktop(client, quest, taskName, onUpdate, signal) 
         if (finalProgress !== null) progress = Math.max(progress, finalProgress);
     }
 
-    // تحقق مستقل من حالة Discord النهائية بدل اعتبار انتهاء الحلقة نجاحًا.
     if (completed && !signal?.stopped) {
         const fresh = await refreshQuest(client, questId);
         if (fresh) completed = isQuestDone(fresh) || getTaskProgress(fresh, taskName) >= target;
@@ -580,7 +580,6 @@ async function completePlayOnDesktop(client, quest, taskName, onUpdate, signal) 
 
 async function enrollIfNeeded(client, quest) {
     if (isQuestEnrolled(quest)) return quest;
-
     try {
         const userStatus = await client.enroll(quest);
         if (userStatus && typeof userStatus === 'object') {
@@ -588,7 +587,6 @@ async function enrollIfNeeded(client, quest) {
         }
         return quest;
     } catch (err) {
-        // بعض الحسابات تكون مسجلة مسبقًا لكن الـpayload محلي قديم.
         if ([400, 409].includes(err.status)) {
             const fresh = await refreshQuest(client, quest.id);
             if (fresh && isQuestEnrolled(fresh)) return fresh;
@@ -646,26 +644,6 @@ async function solveSequentially(token, onUpdate, signal = {}) {
         const allQuests = await client.quests();
         console.log(`📊 إجمالي المهام: ${allQuests.length}\n`);
 
-        const first = allQuests[0];
-        if (first) {
-            const cfg = selectTaskConfig(first);
-            console.log('═══════════════════════════════════════════════');
-            console.log('🔍 تشخيص بنية أول مهمة:');
-            console.log(JSON.stringify({
-                id: first.id,
-                name: getQuestName(first),
-                done: isQuestDone(first),
-                enrolled: isQuestEnrolled(first),
-                configSource: cfg === (first.config?.task_config_v2 || first.config?.taskConfigV2) ? 'taskConfigV2' : 'legacy',
-                tasks: taskEntries(getTaskMap(first)).map(([key, value]) => ({
-                    key,
-                    target: value?.target,
-                    applications: value?.applications?.map(app => app?.id).filter(Boolean) || [],
-                })),
-            }, null, 2).slice(0, 4000));
-            console.log('═══════════════════════════════════════════════\n');
-        }
-
         const activeQuests = allQuests.filter(q => !isExpired(q) && !isNotStarted(q));
         const hiddenCount = allQuests.length - activeQuests.length;
         if (hiddenCount) console.log(`🕒 تم تجاهل ${hiddenCount} مهمة منتهية أو لم تبدأ بعد.\n`);
@@ -712,7 +690,6 @@ async function solveSequentially(token, onUpdate, signal = {}) {
             const questId = quest.id;
             let taskName = chooseSupportedTask(quest);
 
-            // أعد الجلب قبل التنفيذ للتأكد من config/progress الحديثة.
             const freshBefore = await refreshQuest(client, questId);
             if (freshBefore) {
                 quest = freshBefore;
@@ -741,7 +718,6 @@ async function solveSequentially(token, onUpdate, signal = {}) {
                     console.log('   ✅ مسجل مسبقًا');
                 }
 
-                // بعد enroll نأخذ payload حديث لأن user_status/config قد يتغيران.
                 const refreshed = await refreshQuest(client, questId);
                 if (refreshed) quest = refreshed;
 

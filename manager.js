@@ -29,13 +29,11 @@ function stopAccount(accountId) {
     return bot.stop();
 }
 
-// ✅ C3: لا يلمس DB إطلاقاً
 function getAccountStatus(accountId) {
     const bot = activeBots.get(accountId);
     if (bot) {
         return { running: bot.running, status: bot.status };
     }
-    // لا نرجع للـ DB - الراوت راح يستخدم الحالة من الصف
     return { running: false, status: null };
 }
 

@@ -4,6 +4,7 @@ const database = require("./database");
 const manager = require("./manager");
 const config = require("./config");
 const { fetchQuestsOnly } = require("./quests");
+const scheduler = require("./scheduler");
 
 function requireAuth(req, res, next) {
     if (req.session && req.session.authenticated) return next();
@@ -39,7 +40,6 @@ router.get("/api/check", (req, res) => {
 
 // ============ الحسابات ============
 
-// ✅ C3: استخدام status من الصف بدل استعلام إضافي
 router.get("/api/accounts", requireAuth, async (req, res) => {
     try {
         const accounts = await database.getAllAccounts();
@@ -87,7 +87,6 @@ router.post("/api/accounts/:id/refresh", requireAuth, async (req, res) => {
         const account = await database.getAccount(req.params.id);
         if (!account) return res.status(404).json({ error: "الحساب غير موجود" });
 
-        // C8: نرفض التحديث لو الحساب شغال
         if (manager.isRunning(req.params.id)) {
             return res.status(409).json({ error: 'الحساب شغال الآن، انتظر' });
         }
@@ -97,7 +96,6 @@ router.post("/api/accounts/:id/refresh", requireAuth, async (req, res) => {
             return res.status(500).json({ error: result.error });
         }
 
-        // دمج مع المهام الحالية بدل الاستبدال
         const existing = account.quests || [];
         const existingMap = new Map(existing.map(q => [q.id, q]));
         const merged = result.allQuests.map(q => {
@@ -107,7 +105,6 @@ router.post("/api/accounts/:id/refresh", requireAuth, async (req, res) => {
             }
             return q;
         });
-        // أضف المهام القديمة اللي ما رجعها الـ refresh
         for (const old of existing) {
             if (!merged.find(q => q.id === old.id)) merged.push(old);
         }
@@ -138,7 +135,6 @@ router.post("/api/accounts/:id/start", requireAuth, async (req, res) => {
 
         res.json({ success: true, message: "بدأ التشغيل" });
 
-        // تشغيل في الخلفية
         manager.startAccount(accountId, (update) => {
             const percent = update.percent !== undefined ? ` ${update.percent}%` : '';
             console.log(`[${account.name}] ${update.name}: ${update.status}${percent}`);
@@ -156,6 +152,32 @@ router.post("/api/accounts/:id/start", requireAuth, async (req, res) => {
 router.post("/api/accounts/:id/stop", requireAuth, (req, res) => {
     const result = manager.stopAccount(req.params.id);
     res.json(result);
+});
+
+// ============ الجدولة ============
+
+router.get("/api/scheduler/status", requireAuth, (req, res) => {
+    res.json(scheduler.getStatus());
+});
+
+router.post("/api/scheduler/start", requireAuth, (req, res) => {
+    const minutes = parseInt(req.body?.intervalMinutes || config.scheduleIntervalMinutes, 10);
+    const result = scheduler.start(minutes);
+    res.json(result);
+});
+
+router.post("/api/scheduler/stop", requireAuth, (req, res) => {
+    const result = scheduler.stop();
+    res.json(result);
+});
+
+router.post("/api/scheduler/run-now", requireAuth, async (req, res) => {
+    try {
+        scheduler.runCycle().catch(err => console.error('[api] run-now:', err.message));
+        res.json({ success: true, message: 'بدأت الدورة' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ============ Health Check ============
