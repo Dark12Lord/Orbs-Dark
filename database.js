@@ -15,9 +15,14 @@ function initSupabase() {
         return false;
     }
     try {
+        const parsedUrl = new URL(url);
+        if (!['https:', 'http:'].includes(parsedUrl.protocol) || !parsedUrl.hostname.endsWith('.supabase.co')) {
+            throw new Error('SUPABASE_URL غير صالح أو لا يشير إلى مشروع Supabase');
+        }
         const { createClient } = require('@supabase/supabase-js');
         supabase = createClient(url, key);
-        console.log('[db] ✅ Supabase متصل');
+        // إنشاء العميل لا يثبت نجاح الاتصال؛ يتم التحقق عند تنفيذ أول استعلام.
+        console.log(`[db] Supabase client configured for ${parsedUrl.hostname}; awaiting query check`);
         return supabase;
     } catch (err) {
         console.error('[db] ❌ فشل تهيئة Supabase:', err.message);
@@ -26,27 +31,38 @@ function initSupabase() {
     }
 }
 
+function describeDbError(err) {
+    const cause = err && err.cause ? err.cause : null;
+    const code = cause && cause.code ? ` code=${cause.code}` : '';
+    const causeMessage = cause && cause.message ? ` cause=${cause.message}` : '';
+    return `${err && err.name ? err.name : 'Error'}: ${err && err.message ? err.message : String(err)}${code}${causeMessage}`;
+}
+
 async function supabaseWithRetry(operation, maxRetries = 3, opName = 'unknown') {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const result = await operation();
             if (result?.error) {
-                const msg = result.error.message || '';
-                if ((msg.includes('Timeout') || msg.includes('timeout') || msg.includes('fetch')) && attempt < maxRetries) {
+                const err = result.error;
+                const msg = err.message || '';
+                const retryable = /timeout|fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(`${msg} ${err.code || ''}`);
+                if (retryable && attempt < maxRetries) {
                     const wait = 1000 * attempt;
-                    console.log(`[db] ⚠️ ${opName}: محاولة ${attempt} فشلت، إعادة بعد ${wait}ms`);
+                    console.warn(`[db] ${opName}: attempt ${attempt}/${maxRetries} failed: ${describeDbError(err)}; retrying in ${wait}ms`);
                     await new Promise(r => setTimeout(r, wait));
                     continue;
                 }
+                if (retryable) console.error(`[db] ${opName}: final network/database failure: ${describeDbError(err)}`);
             }
             return result;
         } catch (err) {
             if (attempt < maxRetries) {
                 const wait = 1000 * attempt;
-                console.log(`[db] ⚠️ ${opName}: محاولة ${attempt} فشلت، إعادة بعد ${wait}ms`);
+                console.warn(`[db] ${opName}: attempt ${attempt}/${maxRetries} failed: ${describeDbError(err)}; retrying in ${wait}ms`);
                 await new Promise(r => setTimeout(r, wait));
                 continue;
             }
+            console.error(`[db] ${opName}: final request failure: ${describeDbError(err)}`);
             throw err;
         }
     }
@@ -150,8 +166,7 @@ async function getAllAccounts() {
     if (sb) {
         const { data, error } = await supabaseWithRetry(async () => await sb.from('accounts').select('*').order('created_at', { ascending: true }), 3, 'getAllAccounts');
         if (error) {
-            console.error('[db] getAllAccounts error:', error.message);
-            return [];
+            throw new Error(`Supabase getAllAccounts failed: ${describeDbError(error)}`);
         }
         accounts = data || [];
     } else {

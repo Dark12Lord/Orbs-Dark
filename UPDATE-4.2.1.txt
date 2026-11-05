@@ -1,0 +1,17 @@
+Orbs-Dark 4.2.1 — Supabase diagnostics patch
+
+Changes:
+- Bumped package version to 4.2.1 so the deployed release is easier to identify.
+- Removed the misleading startup message that implied Supabase connectivity was already verified.
+- Added safe network-error diagnostics (including nested Node.js cause codes when available).
+- getAllAccounts now propagates Supabase failures instead of returning an empty successful account list.
+- No task engine, Discord integration, UI, schema, or environment secrets were changed.
+
+Deploy checklist:
+1. Back up the currently deployed project.
+2. Upload this source to the repository connected to Render and trigger a new deploy.
+3. Confirm startup logs show dark-orbs@4.2.1.
+4. Confirm SUPABASE_URL is the project's HTTPS URL and SUPABASE_KEY is the correct server-side key stored only in Render Environment.
+5. Never paste SUPABASE_KEY, ADMIN_PASSWORD, SESSION_SECRET, ENCRYPTION_KEY, or account credentials into chat or commit them to Git.
+
+If the next logs still show fetch failed, inspect the added cause/code details. Common causes include DNS resolution, outbound network/TLS failure, an incorrect project URL, or a paused/unavailable Supabase project. This patch improves diagnosis; it cannot repair an external Supabase/network outage by itself.

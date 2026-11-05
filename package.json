@@ -1,6 +1,6 @@
 {
   "name": "dark-orbs",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "description": "أداة إدارة مهام ديسكورد باستخدام Discord API المباشر",
   "main": "index.js",
   "scripts": {
